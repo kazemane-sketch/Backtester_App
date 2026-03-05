@@ -84,6 +84,21 @@ Le migration sono in:
 
 Se non usi CLI, esegui i file SQL in ordine nel SQL editor Supabase.
 
+### Deploy DB migrations
+Per deployare le migration sul progetto remoto usato dall'app:
+
+```bash
+supabase login
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+Dopo il push, ricarica la cache schema PostgREST:
+
+```sql
+NOTIFY pgrst, 'reload schema';
+```
+
 ### 3) Configura Auth (Magic Link)
 In Supabase `Authentication -> URL Configuration` imposta:
 - Site URL locale: `http://localhost:3000`
@@ -166,6 +181,7 @@ Dopo il primo deploy, in Supabase aggiungi:
 - `POST /api/backtests/run`
 - `GET /api/backtests/:id`
 - `POST /api/chat/strategy`
+- `GET /api/health/rpc`
 
 ## Smart Instrument Search (Step 1)
 - Estensioni abilitate: `vector`, `pg_trgm`, `unaccent`.
