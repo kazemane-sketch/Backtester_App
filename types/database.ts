@@ -123,6 +123,75 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["instrument_embeddings"]["Insert"]>;
       };
+      ingest_job_runs: {
+        Row: {
+          id: string;
+          job_name: string;
+          status: "queued" | "running" | "success" | "failed";
+          started_at: string;
+          finished_at: string | null;
+          error: string | null;
+          meta: Json;
+          attempts: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          job_name: string;
+          status: "queued" | "running" | "success" | "failed";
+          started_at?: string;
+          finished_at?: string | null;
+          error?: string | null;
+          meta?: Json;
+          attempts?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["ingest_job_runs"]["Insert"]>;
+      };
+      ingest_sync_state: {
+        Row: {
+          key: string;
+          value: Json;
+          updated_at: string;
+        };
+        Insert: {
+          key: string;
+          value?: Json;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["ingest_sync_state"]["Insert"]>;
+      };
+      prices_daily: {
+        Row: {
+          id: number;
+          instrument_id: string;
+          provider: "EODHD" | "YAHOO";
+          date: string;
+          open: number | null;
+          high: number | null;
+          low: number | null;
+          close: number | null;
+          adj_close: number | null;
+          volume: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          instrument_id: string;
+          provider?: "EODHD" | "YAHOO";
+          date: string;
+          open?: number | null;
+          high?: number | null;
+          low?: number | null;
+          close?: number | null;
+          adj_close?: number | null;
+          volume?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["prices_daily"]["Insert"]>;
+      };
       portfolios: {
         Row: {
           id: string;

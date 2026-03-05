@@ -80,6 +80,7 @@ Le migration sono in:
 - `supabase/migrations/0002_rls_policies.sql`
 - `supabase/migrations/0003_indexes.sql`
 - `supabase/migrations/0004_smart_instrument_search.sql` (pgvector + smart search index + RPC)
+- `supabase/migrations/0005_ingest_worker_infra.sql` (ingest job runs + sync state + prices_daily)
 
 Se non usi CLI, esegui i file SQL in ordine nel SQL editor Supabase.
 
@@ -100,6 +101,10 @@ Usa queste variabili:
 - `SUPABASE_SERVICE_ROLE_KEY` (solo server)
 - `EODHD_API_KEY`
 - `OPENAI_API_KEY`
+- `REDIS_URL` (Upstash redis:// per BullMQ)
+- `UPSTASH_REDIS_REST_URL` (opzionale, health/ops)
+- `UPSTASH_REDIS_REST_TOKEN` (opzionale, health/ops)
+- `CRON_SECRET`
 
 ## Script npm
 - `npm run dev` -> sviluppo locale
@@ -108,6 +113,9 @@ Usa queste variabili:
 - `npm run lint` -> lint
 - `npm run typecheck` -> type check TypeScript
 - `npm run test` -> test Vitest
+- `npm run worker:dev` -> avvia worker in sviluppo
+- `npm run worker:build` -> build TypeScript worker
+- `npm run worker:typecheck` -> typecheck worker
 
 ## Test
 Esegui:
@@ -115,6 +123,7 @@ Esegui:
 npm run lint
 npm run typecheck
 npm run test
+npm run worker:typecheck
 ```
 
 Suite minima inclusa:
@@ -132,6 +141,10 @@ Suite minima inclusa:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `EODHD_API_KEY`
 - `OPENAI_API_KEY`
+- `REDIS_URL`
+- `UPSTASH_REDIS_REST_URL` (opzionale)
+- `UPSTASH_REDIS_REST_TOKEN` (opzionale)
+- `CRON_SECRET`
 5. Deploy.
 
 ## Supabase redirect URLs per Vercel
@@ -139,6 +152,12 @@ Dopo il primo deploy, in Supabase aggiungi:
 - Produzione: `https://<your-domain>/auth/callback`
 - Vercel domain: `https://<project>.vercel.app/auth/callback`
 - Preview wildcard: `https://*-<project>.vercel.app/auth/callback`
+
+## Vercel Cron (Hobby)
+- File: `vercel.json`
+- Cron configurato: una chiamata **daily** a `GET /api/admin/enqueue` (`0 3 * * *` UTC).
+- Protezione: Vercel invia `Authorization: Bearer ${CRON_SECRET}` automaticamente quando `CRON_SECRET` e impostato.
+- Nota piano Hobby: frequenze > daily non sono supportate; per hourly passa a Vercel Pro o usa scheduler esterno.
 
 ## API disponibili
 - `GET /api/instruments/search?q=...&provider=EODHD|YAHOO`
@@ -161,6 +180,113 @@ Dopo il primo deploy, in Supabase aggiungi:
 - `public.match_instruments(query_embedding, match_count, filter_type)`
 - `instrument_embeddings` usa indice HNSW cosine su `vector(1536)`.
 - Il client non legge tabelle strumenti direttamente: usa solo API `/api/instruments/*` server-side.
+
+## Ingestion Worker Scaffold (Step 2.1)
+- Nuovo servizio in `apps/worker` con:
+- code BullMQ (`universeQueue`, `fundamentalsQueue`, `pricesQueue`, `embeddingsQueue`)
+- client Supabase admin (`SUPABASE_SERVICE_ROLE_KEY`)
+- client EODHD rate-limitato
+- job scaffold con logging su `ingest_job_runs` e stato in `ingest_sync_state`
+- supporto Upstash REST client per health ping, mentre BullMQ usa `REDIS_URL`.
+- processing a chunk con `cursor` e auto-enqueue del chunk successivo fino a coprire l universo.
+
+Setup locale worker:
+```bash
+cd apps/worker
+npm install
+npm run typecheck
+npm run dev
+```
+
+## Operations (Worker + Queue)
+### Bootstrap universe one-shot
+```bash
+curl -X POST "https://<your-domain>/api/admin/enqueue" \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"job":"universe","mode":"full"}'
+```
+
+### Enqueue one-shot jobs
+```bash
+curl -X POST "https://<your-domain>/api/admin/enqueue" \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"job":"fundamentals","mode":"delta"}'
+```
+
+```bash
+curl -X POST "https://<your-domain>/api/admin/enqueue" \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"job":"prices","mode":"delta"}'
+```
+
+```bash
+curl -X POST "https://<your-domain>/api/admin/enqueue" \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"job":"embeddings","mode":"delta"}'
+```
+
+### Run worker forever (local/VM)
+```bash
+npm run worker:dev
+```
+
+### Monitor ingest jobs
+```sql
+select id, job_name, status, started_at, finished_at, attempts, error
+from public.ingest_job_runs
+order by started_at desc
+limit 100;
+```
+
+### Monitor sync state
+```sql
+select key, value, updated_at
+from public.ingest_sync_state
+order by updated_at desc;
+```
+
+### Rate-limit operations
+- Worker usa throttling EODHD (min interval globale richieste) + retry/backoff BullMQ.
+- Se ricevi 429/403 frequenti:
+- riduci `WORKER_CONCURRENCY`
+- aumenta cadenza scheduler per batch pesanti
+- limita `chunkSize` nei job enqueue
+
+## Deploy Worker (always-on)
+### Docker build/run
+```bash
+cd apps/worker
+docker build -t portfolio-backtester-worker .
+docker run --rm \
+  -e SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
+  -e SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
+  -e EODHD_API_KEY="$EODHD_API_KEY" \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -e REDIS_URL="$REDIS_URL" \
+  -e UPSTASH_REDIS_REST_URL="$UPSTASH_REDIS_REST_URL" \
+  -e UPSTASH_REDIS_REST_TOKEN="$UPSTASH_REDIS_REST_TOKEN" \
+  -e WORKER_CONCURRENCY="5" \
+  -e LOG_LEVEL="info" \
+  portfolio-backtester-worker
+```
+
+### Fly.io / Render / VM
+- Deploya `apps/worker/Dockerfile` come service separato always-on.
+- Setta env runtime:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `EODHD_API_KEY`
+- `OPENAI_API_KEY`
+- `REDIS_URL`
+- `UPSTASH_REDIS_REST_URL` (opzionale)
+- `UPSTASH_REDIS_REST_TOKEN` (opzionale)
+- `WORKER_CONCURRENCY`
+- `LOG_LEVEL`
+- Healthcheck: usa heartbeat log del worker (1/min) o endpoint dedicato se vuoi aggiungerlo.
 
 ## BacktestConfig (single source of truth)
 Definito in `lib/schemas/backtest-config.ts` (Zod + TypeScript).

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/enqueue",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
