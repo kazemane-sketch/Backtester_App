@@ -93,6 +93,14 @@ export class EodhdProvider implements MarketDataProvider {
       });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error(
+            `EODHD access denied for ${instrument.providerInstrumentId} (403). ` +
+              "The selected exchange may not be included in your EODHD plan. " +
+              "Choose another listing in Assets (for example US/LSE) or use a key with that exchange enabled."
+          );
+        }
+
         throw new Error(
           `EODHD history failed for ${instrument.providerInstrumentId} with status ${response.status}`
         );
