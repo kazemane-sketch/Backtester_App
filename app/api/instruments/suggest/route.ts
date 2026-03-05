@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   try {
     const suggestions = await getInstrumentSuggestions({
       query: parsed.data.q,
-      type: parsed.data.type,
+      type: "etf",
       limit: parsed.data.limit,
       locale
     });

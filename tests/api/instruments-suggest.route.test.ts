@@ -62,6 +62,13 @@ describe("GET /api/instruments/suggest", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    expect(suggestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "msci world",
+        type: "etf",
+        limit: 10
+      })
+    );
     expect(payload).toHaveLength(1);
     expect(payload[0].symbol).toBe("SWDA.LSE");
   });

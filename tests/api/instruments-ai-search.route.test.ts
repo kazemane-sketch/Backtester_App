@@ -51,14 +51,17 @@ describe("POST /api/instruments/ai-search", () => {
     expect(response.status).toBe(400);
   });
 
-  it("returns filters and results on success", async () => {
+  it("returns filters and results on success for italian semantic query", async () => {
     authMock.mockResolvedValue({ data: { user: { id: "u1" } } });
     aiSearchMock.mockResolvedValue({
+      query_it: "indice con india",
+      query_en: "index with india",
+      interpretedQuery: "india index",
       filters: {
         type: "etf",
-        keywords: ["msci world"],
-        index_contains: "MSCI World",
-        country_exposure: [],
+        keywords: ["india index"],
+        index_contains: "India",
+        country_exposure: [{ country: "India", min: 0.08, max: 0.12 }],
         domicile: null,
         currency: null,
         accumulation: null
@@ -66,19 +69,19 @@ describe("POST /api/instruments/ai-search", () => {
       results: [
         {
           instrumentId: "i1",
-          symbol: "SWDA.LSE",
-          name: "iShares Core MSCI World",
-          isin: "IE00B4L5Y983",
+          symbol: "INDA.US",
+          name: "iShares MSCI India ETF",
+          isin: null,
           type: "etf",
-          exchange: "LSE",
+          exchange: "NASDAQ",
           currency: "USD",
-          indexName: "MSCI World",
-          domicile: "Ireland",
+          indexName: "MSCI India",
+          domicile: "US",
           score: 99,
           source: "db"
         }
       ],
-      explanation: ["Filtro index_contains applicato: MSCI World"]
+      explanation: ["Filtro index_contains applicato: India"]
     });
 
     const { POST } = await import("@/app/api/instruments/ai-search/route");
@@ -86,14 +89,22 @@ describe("POST /api/instruments/ai-search", () => {
       new Request("http://localhost:3000/api/instruments/ai-search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: "ETF MSCI World" })
+        body: JSON.stringify({ query: "indice con india", type: "etf" })
       })
     );
 
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    expect(aiSearchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "indice con india",
+        type: "etf",
+        limit: 20
+      })
+    );
     expect(payload.results).toHaveLength(1);
     expect(payload.filters.type).toBe("etf");
+    expect(payload.interpretedQuery).toBe("india index");
   });
 });
