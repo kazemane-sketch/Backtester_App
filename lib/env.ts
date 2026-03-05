@@ -1,7 +1,6 @@
-const requiredClientEnv = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"] as const;
 const requiredServerEnv = ["SUPABASE_SERVICE_ROLE_KEY", "EODHD_API_KEY", "OPENAI_API_KEY"] as const;
 
-type EnvKey = (typeof requiredClientEnv)[number] | (typeof requiredServerEnv)[number];
+type EnvKey = (typeof requiredServerEnv)[number];
 
 function assertEnv(keys: readonly EnvKey[]) {
   for (const key of keys) {
@@ -12,11 +11,20 @@ function assertEnv(keys: readonly EnvKey[]) {
 }
 
 export function getSupabaseClientEnv() {
-  assertEnv(requiredClientEnv);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url) {
+    throw new Error("Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL");
+  }
+
+  if (!anonKey) {
+    throw new Error("Missing required environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  }
 
   return {
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+    url,
+    anonKey
   };
 }
 
