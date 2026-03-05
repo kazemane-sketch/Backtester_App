@@ -154,8 +154,10 @@ Usato da:
 
 ## Missing data policy (MVP)
 Nel motore daily:
-- gap <= 3 trading days: interpolazione lineare
-- gap > 3: esclusione giorno dal calendario comune del run
+- niente interpolazione lineare (anti-lookahead).
+- forward-fill solo con dati passati (LOCF) fino a max `3` giorni.
+- se un asset resta stale oltre soglia: quel giorno viene escluso dal calendario comune del run.
+- il benchmark non decide il calendario del portafoglio: viene solo allineato passivamente alle date gia valide degli asset.
 
 ## Provider note (Yahoo)
 - `YAHOO` è mantenuto nell'astrazione e nello schema.

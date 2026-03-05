@@ -44,7 +44,7 @@ export function StrategyChat({
         ...prev,
         {
           role: "assistant",
-          content: `Config generato: ${response.config.name}. Il wizard è stato aggiornato automaticamente.`
+          content: `Config generato: ${response.config.name ?? "Backtest run"}. Il wizard è stato aggiornato automaticamente.`
         }
       ]);
     } catch (error) {

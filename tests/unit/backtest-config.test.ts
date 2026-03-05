@@ -19,6 +19,7 @@ describe("backtestConfigSchema", () => {
     fees: {
       tradeFeePct: 0.1
     },
+    priceField: "adjClose",
     benchmark: {
       query: "ACWI"
     },
@@ -40,6 +41,23 @@ describe("backtestConfigSchema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts instrumentId-based assets", () => {
+    const result = backtestConfigSchema.safeParse({
+      ...validConfig,
+      assets: [
+        {
+          instrumentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          weight: 100
+        }
+      ],
+      benchmark: {
+        instrumentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+      }
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("rejects fee outside range", () => {

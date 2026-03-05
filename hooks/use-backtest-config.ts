@@ -21,6 +21,7 @@ export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
   fees: {
     tradeFeePct: 0.1
   },
+  priceField: "adjClose",
   benchmark: {
     query: "SPY"
   },

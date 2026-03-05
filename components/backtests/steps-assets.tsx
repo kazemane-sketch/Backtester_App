@@ -28,7 +28,8 @@ function AssetQueryRow({
   canRemove: boolean;
 }) {
   const [showAlternatives, setShowAlternatives] = useState(false);
-  const search = useInstrumentSearch(asset.query, provider);
+  const queryValue = asset.query ?? "";
+  const search = useInstrumentSearch(queryValue, provider);
   const primary = search.data?.primary ?? null;
   const alternatives = search.data?.alternatives ?? [];
   const visibleListings = primary ? [primary, ...(showAlternatives ? alternatives : [])] : [];
@@ -41,7 +42,7 @@ function AssetQueryRow({
           <Input
             onChange={(event) => onChange(event.target.value)}
             placeholder="es. VWCE, iShares Core MSCI World..."
-            value={asset.query}
+            value={queryValue}
           />
         </div>
         <Button disabled={!canRemove} onClick={onRemove} size="icon" type="button" variant="outline">
@@ -56,7 +57,7 @@ function AssetQueryRow({
           {visibleListings.map((listing, index) => {
             const isSelected =
               (asset.resolvedInstrumentId && listing.instrumentId === asset.resolvedInstrumentId) ||
-              asset.query.toUpperCase() === listing.providerInstrumentId.toUpperCase();
+              queryValue.toUpperCase() === listing.providerInstrumentId.toUpperCase();
 
             return (
               <div

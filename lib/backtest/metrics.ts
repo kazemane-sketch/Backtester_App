@@ -20,6 +20,7 @@ function stdDev(values: number[]): number {
 }
 
 export function computeSummaryMetrics(args: {
+  initialCapital: number;
   timeseries: TimeSeriesPoint[];
   totalFees: number;
 }): BacktestSummaryMetrics {
@@ -30,9 +31,9 @@ export function computeSummaryMetrics(args: {
     throw new Error("Timeseries must contain at least one point");
   }
 
-  const totalReturn = last.portfolioValue / first.portfolioValue - 1;
+  const totalReturn = last.portfolioValue / args.initialCapital - 1;
   const durationYears = Math.max(yearsBetween(first.date, last.date), 1 / 252);
-  const cagr = Math.pow(last.portfolioValue / first.portfolioValue, 1 / durationYears) - 1;
+  const cagr = Math.pow(last.portfolioValue / args.initialCapital, 1 / durationYears) - 1;
 
   const dailyReturns = args.timeseries.slice(1).map((point) => point.dailyReturn);
   const averageDailyReturn = mean(dailyReturns);

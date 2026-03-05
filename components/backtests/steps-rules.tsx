@@ -29,7 +29,10 @@ export function RulesStep({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Nome Backtest</Label>
-            <Input onChange={(event) => onChange({ ...config, name: event.target.value })} value={config.name} />
+            <Input
+              onChange={(event) => onChange({ ...config, name: event.target.value })}
+              value={config.name ?? ""}
+            />
           </div>
           <div className="space-y-2">
             <Label>Initial Capital</Label>
@@ -93,6 +96,22 @@ export function RulesStep({
         </div>
 
         <div className="space-y-2">
+          <Label>Price Field</Label>
+          <Select
+            onValueChange={(value: "adjClose" | "close") => onChange({ ...config, priceField: value })}
+            value={config.priceField}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="adjClose">Adjusted Close (default)</SelectItem>
+              <SelectItem value="close">Close</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
           <Label>Rebalancing Mode</Label>
           <Select
             onValueChange={(value: "none" | "periodic" | "threshold") => {
@@ -142,7 +161,7 @@ export function RulesStep({
           <div className="space-y-2">
             <Label>Periodic Frequency</Label>
             <Select
-              onValueChange={(value: "weekly" | "monthly" | "quarterly") =>
+              onValueChange={(value: "weekly" | "monthly" | "quarterly" | "yearly") =>
                 onChange({
                   ...config,
                   rebalancing: {
@@ -160,6 +179,7 @@ export function RulesStep({
                 <SelectItem value="weekly">Weekly</SelectItem>
                 <SelectItem value="monthly">Monthly</SelectItem>
                 <SelectItem value="quarterly">Quarterly</SelectItem>
+                <SelectItem value="yearly">Yearly</SelectItem>
               </SelectContent>
             </Select>
           </div>

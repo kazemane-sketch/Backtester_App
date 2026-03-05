@@ -10,7 +10,7 @@ export class YahooProvider implements MarketDataProvider {
     );
   }
 
-  async getDailyAdjustedClose(args: {
+  async getDailyPrices(args: {
     instruments: ProviderInstrument[];
     startDate: string;
     endDate: string;

@@ -47,7 +47,7 @@ export function WeightsStep({
           <div key={`weight-${index}`} className="grid gap-3 md:grid-cols-[1fr_220px]">
             <div className="space-y-2">
               <Label>Asset {index + 1}</Label>
-              <Input readOnly value={asset.query || `Asset ${index + 1}`} />
+              <Input readOnly value={asset.query || asset.instrumentId || `Asset ${index + 1}`} />
             </div>
             <div className="space-y-2">
               <Label>Peso (%)</Label>

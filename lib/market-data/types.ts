@@ -15,6 +15,7 @@ export type ProviderInstrument = {
 
 export type ProviderPricePoint = {
   date: string;
+  close: number;
   adjustedClose: number;
 };
 

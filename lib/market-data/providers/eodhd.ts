@@ -71,7 +71,7 @@ export class EodhdProvider implements MarketDataProvider {
     return payload.map(normalizeProviderInstrument).filter((item): item is ProviderInstrument => Boolean(item));
   }
 
-  async getDailyAdjustedClose(args: {
+  async getDailyPrices(args: {
     instruments: ProviderInstrument[];
     startDate: string;
     endDate: string;
@@ -114,9 +114,10 @@ export class EodhdProvider implements MarketDataProvider {
         points: rows
           .map((row) => ({
             date: row.date,
+            close: row.close ?? NaN,
             adjustedClose: row.adjusted_close ?? row.close ?? NaN
           }))
-          .filter((point) => Number.isFinite(point.adjustedClose))
+          .filter((point) => Number.isFinite(point.adjustedClose) && Number.isFinite(point.close))
       };
     });
 

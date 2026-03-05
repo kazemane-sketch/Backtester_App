@@ -3,7 +3,7 @@ import type { ProviderInstrument, ProviderPriceSeries } from "@/lib/market-data/
 export interface MarketDataProvider {
   readonly name: "EODHD" | "YAHOO";
   searchInstruments(query: string, locale?: string): Promise<ProviderInstrument[]>;
-  getDailyAdjustedClose(args: {
+  getDailyPrices(args: {
     instruments: ProviderInstrument[];
     startDate: string;
     endDate: string;

@@ -8,6 +8,32 @@ import type { ProviderInstrument } from "@/lib/market-data/types";
 import { runBacktestPayloadSchema } from "@/lib/schemas/backtest-config";
 import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
 
+type DbInstrument = {
+  id: string;
+  symbol: string;
+  name: string;
+  exchange: string;
+  currency: string;
+  provider: "EODHD" | "YAHOO";
+  provider_instrument_id: string;
+  isin: string | null;
+  metadata: unknown;
+};
+
+function dbInstrumentToProviderInstrument(instrument: DbInstrument): ProviderInstrument {
+  return {
+    instrumentId: instrument.id,
+    provider: instrument.provider,
+    providerInstrumentId: instrument.provider_instrument_id,
+    symbol: instrument.symbol,
+    name: instrument.name,
+    exchange: instrument.exchange,
+    currency: instrument.currency,
+    isin: instrument.isin ?? undefined,
+    countryCode: undefined
+  };
+}
+
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
   const {
@@ -30,40 +56,66 @@ export async function POST(request: Request) {
   const admin = createServiceRoleClient();
   let runId: string | null = null;
 
+  async function getDbInstrumentById(instrumentId: string): Promise<DbInstrument | null> {
+    const { data } = await admin
+      .from("instruments")
+      .select("id,symbol,name,exchange,currency,provider,provider_instrument_id,isin,metadata")
+      .eq("id", instrumentId)
+      .single();
+
+    return data ?? null;
+  }
+
+  async function upsertAndFetchByProviderInstrument(instrument: ProviderInstrument): Promise<DbInstrument | null> {
+    const upsertPayload = {
+      provider: instrument.provider,
+      provider_instrument_id: instrument.providerInstrumentId,
+      symbol: instrument.symbol,
+      isin: instrument.isin ?? null,
+      name: instrument.name,
+      exchange: instrument.exchange,
+      currency: instrument.currency,
+      metadata: {
+        countryCode: instrument.countryCode ?? null,
+        type: instrument.type ?? null
+      }
+    };
+
+    await admin.from("instruments").upsert(upsertPayload, { onConflict: "provider,provider_instrument_id" });
+
+    const { data } = await admin
+      .from("instruments")
+      .select("id,symbol,name,exchange,currency,provider,provider_instrument_id,isin,metadata")
+      .eq("provider", instrument.provider)
+      .eq("provider_instrument_id", instrument.providerInstrumentId)
+      .single();
+
+    return data ?? null;
+  }
+
   async function resolveAssetInstruments(): Promise<
     { instrumentId: string; symbol: string; weight: number; providerInstrument: ProviderInstrument }[]
   > {
-    const resolved = [] as {
+    const resolved: {
       instrumentId: string;
       symbol: string;
       weight: number;
       providerInstrument: ProviderInstrument;
-    }[];
+    }[] = [];
 
     for (const asset of config.assets) {
-      let dbInstrument:
-        | {
-            id: string;
-            symbol: string;
-            name: string;
-            exchange: string;
-            currency: string;
-            provider: "EODHD" | "YAHOO";
-            provider_instrument_id: string;
-            isin: string | null;
-            metadata: unknown;
-          }
-        | null
-        | undefined = null;
+      const explicitInstrumentId = asset.instrumentId ?? asset.resolvedInstrumentId;
+      let dbInstrument: DbInstrument | null = null;
 
-      if (asset.resolvedInstrumentId) {
-        const { data } = await admin
-          .from("instruments")
-          .select("id,symbol,name,exchange,currency,provider,provider_instrument_id,isin,metadata")
-          .eq("id", asset.resolvedInstrumentId)
-          .single();
-        dbInstrument = data;
-      } else {
+      if (explicitInstrumentId) {
+        dbInstrument = await getDbInstrumentById(explicitInstrumentId);
+      }
+
+      if (!dbInstrument) {
+        if (!asset.query) {
+          throw new Error("Asset query missing and instrumentId is not resolvable");
+        }
+
         const locale = request.headers.get("accept-language") || "en-US";
         const search = await resolveInstrumentsBySearch({
           query: asset.query,
@@ -75,50 +127,18 @@ export async function POST(request: Request) {
           throw new Error(`Unable to resolve instrument for asset query: ${asset.query}`);
         }
 
-        const upsertPayload = {
-          provider: search.primary.provider,
-          provider_instrument_id: search.primary.providerInstrumentId,
-          symbol: search.primary.symbol,
-          isin: search.primary.isin ?? null,
-          name: search.primary.name,
-          exchange: search.primary.exchange,
-          currency: search.primary.currency,
-          metadata: {
-            countryCode: search.primary.countryCode ?? null,
-            type: search.primary.type ?? null
-          }
-        };
-
-        await admin.from("instruments").upsert(upsertPayload, { onConflict: "provider,provider_instrument_id" });
-
-        const { data } = await admin
-          .from("instruments")
-          .select("id,symbol,name,exchange,currency,provider,provider_instrument_id,isin,metadata")
-          .eq("provider", search.primary.provider)
-          .eq("provider_instrument_id", search.primary.providerInstrumentId)
-          .single();
-
-        dbInstrument = data;
+        dbInstrument = await upsertAndFetchByProviderInstrument(search.primary);
       }
 
       if (!dbInstrument) {
-        throw new Error(`Instrument not found for asset query: ${asset.query}`);
+        throw new Error("Instrument could not be resolved");
       }
 
       resolved.push({
         instrumentId: dbInstrument.id,
         symbol: dbInstrument.symbol,
         weight: asset.weight,
-        providerInstrument: {
-          provider: dbInstrument.provider,
-          providerInstrumentId: dbInstrument.provider_instrument_id,
-          symbol: dbInstrument.symbol,
-          name: dbInstrument.name,
-          exchange: dbInstrument.exchange,
-          currency: dbInstrument.currency,
-          isin: dbInstrument.isin ?? undefined,
-          countryCode: undefined
-        }
+        providerInstrument: dbInstrumentToProviderInstrument(dbInstrument)
       });
     }
 
@@ -126,7 +146,16 @@ export async function POST(request: Request) {
   }
 
   async function resolveBenchmarkInstrument() {
-    if (!config.benchmark?.query) {
+    if (!config.benchmark) {
+      return null;
+    }
+
+    if (config.benchmark.instrumentId) {
+      const dbInstrument = await getDbInstrumentById(config.benchmark.instrumentId);
+      return dbInstrument ? dbInstrumentToProviderInstrument(dbInstrument) : null;
+    }
+
+    if (!config.benchmark.query) {
       return null;
     }
 
@@ -146,7 +175,7 @@ export async function POST(request: Request) {
       config
     });
     if (!runId) {
-      throw new Error("Failed to initialize run");
+      throw new Error("Failed to initialize backtest run");
     }
 
     const [assets, benchmarkInstrument] = await Promise.all([
@@ -154,7 +183,7 @@ export async function POST(request: Request) {
       resolveBenchmarkInstrument()
     ]);
 
-    const assetSeries = await provider.getDailyAdjustedClose({
+    const assetSeries = await provider.getDailyPrices({
       instruments: assets.map((asset) => asset.providerInstrument),
       startDate: config.startDate,
       endDate: config.endDate
@@ -162,7 +191,7 @@ export async function POST(request: Request) {
 
     const benchmarkSeries = benchmarkInstrument
       ? (
-          await provider.getDailyAdjustedClose({
+          await provider.getDailyPrices({
             instruments: [benchmarkInstrument],
             startDate: config.startDate,
             endDate: config.endDate
@@ -183,13 +212,14 @@ export async function POST(request: Request) {
 
     await saveBacktestResult({
       userId: user.id,
-      runId: runId,
+      runId,
       result
     });
 
     return NextResponse.json({
       id: runId,
-      summary: result.summary
+      summary: result.summary,
+      diagnostics: result.diagnostics
     });
   } catch (error) {
     if (runId) {

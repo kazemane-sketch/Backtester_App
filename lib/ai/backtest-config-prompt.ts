@@ -8,8 +8,9 @@ Constraints:
 - dataProvider must be EODHD unless user explicitly requests YAHOO.
 - tradeFeePct is a number in range 0..5.
 - rebalancing.mode in [none, periodic, threshold].
-- if periodic mode, include periodicFrequency in [weekly, monthly, quarterly].
+- if periodic mode, include periodicFrequency in [weekly, monthly, quarterly, yearly].
 - if threshold mode, include thresholdPct in [5,10,15,20].
+- priceField default must be adjClose unless user explicitly asks for close.
 - startDate and endDate format YYYY-MM-DD.
 - initialCapital default 10000 unless user specifies otherwise.
 `;

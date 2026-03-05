@@ -2,6 +2,7 @@ import type { BacktestConfig } from "@/lib/schemas/backtest-config";
 
 export type PricePoint = {
   date: string;
+  close: number;
   adjustedClose: number;
 };
 
@@ -22,6 +23,8 @@ export type TimeSeriesPoint = {
 
 export type TradeLogEntry = {
   date: string;
+  decisionDate?: string;
+  reason?: "initial_allocation" | "periodic" | "threshold";
   instrumentId?: string;
   symbol: string;
   side: "buy" | "sell";
@@ -46,4 +49,7 @@ export type BacktestRunResult = {
   summary: BacktestSummaryMetrics;
   timeseries: TimeSeriesPoint[];
   trades: TradeLogEntry[];
+  diagnostics?: {
+    droppedDates: string[];
+  };
 };

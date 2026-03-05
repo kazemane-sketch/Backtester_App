@@ -1,5 +1,6 @@
 import type { BacktestConfig } from "@/lib/schemas/backtest-config";
 import type { BacktestRunResult } from "@/types/backtest";
+import { uniformDownsample } from "@/lib/backtest/downsample";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
 export async function createBacktestRun(args: {
@@ -12,7 +13,7 @@ export async function createBacktestRun(args: {
     .from("backtest_runs")
     .insert({
       user_id: args.userId,
-      name: args.config.name,
+      name: args.config.name ?? "Backtest run",
       status: "running",
       config: args.config,
       data_provider: args.config.dataProvider,
@@ -47,7 +48,9 @@ export async function saveBacktestResult(args: {
     total_fees: args.result.summary.totalFees
   };
 
-  const timeseriesPayload = args.result.timeseries.map((point) => ({
+  const persistedTimeseries = uniformDownsample(args.result.timeseries, 1000);
+
+  const timeseriesPayload = persistedTimeseries.map((point) => ({
     run_id: args.runId,
     user_id: args.userId,
     t: point.date,
