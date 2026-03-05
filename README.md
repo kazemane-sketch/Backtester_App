@@ -89,7 +89,7 @@ Per deployare le migration sul progetto remoto usato dall'app:
 
 ```bash
 supabase login
-supabase link --project-ref <your-project-ref>
+supabase link --project-ref <ref>
 supabase db push
 ```
 
@@ -97,6 +97,12 @@ Dopo il push, ricarica la cache schema PostgREST:
 
 ```sql
 NOTIFY pgrst, 'reload schema';
+```
+
+Oppure via script:
+
+```bash
+psql "$SUPABASE_DB_URL" -f scripts/reload_schema.sql
 ```
 
 ### 3) Configura Auth (Magic Link)

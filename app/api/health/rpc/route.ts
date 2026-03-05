@@ -24,7 +24,7 @@ export async function GET() {
     const admin = createServiceRoleClient();
     const { error } = await admin.rpc("suggest_instruments", {
       limit_count: 1,
-      query_text: "test",
+      query_text: "india",
       requested_type: "etf"
     });
 

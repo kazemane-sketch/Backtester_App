@@ -24,7 +24,7 @@ describe("GET /api/health/rpc", () => {
     expect(payload.ok).toBe(true);
     expect(rpcMock).toHaveBeenCalledWith("suggest_instruments", {
       limit_count: 1,
-      query_text: "test",
+      query_text: "india",
       requested_type: "etf"
     });
   });

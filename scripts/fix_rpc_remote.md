@@ -31,7 +31,7 @@ NOTIFY pgrst, 'reload schema';
 Puoi eseguirlo con SQL Editor Supabase oppure via `psql` se hai una connection string:
 
 ```bash
-psql "$SUPABASE_DB_URL" -f scripts/reload_postgrest_schema.sql
+psql "$SUPABASE_DB_URL" -f scripts/reload_schema.sql
 ```
 
 ## 5) Verifica che la funzione esista con firma corretta
