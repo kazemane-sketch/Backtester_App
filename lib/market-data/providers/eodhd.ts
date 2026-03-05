@@ -28,10 +28,12 @@ function normalizeProviderInstrument(entry: EodSearchResult): ProviderInstrument
     return null;
   }
 
+  const providerInstrumentId = `${symbol}.${exchange}`;
+
   return {
     provider: "EODHD",
-    providerInstrumentId: `${symbol}.${exchange}`,
-    symbol,
+    providerInstrumentId,
+    symbol: providerInstrumentId,
     name: entry.Name?.trim() || symbol,
     exchange,
     currency: entry.Currency?.trim() || "USD",

@@ -11,11 +11,20 @@ type SearchResult = {
   alternatives: ProviderInstrument[];
 };
 
+function normalizeInstrumentType(type: string | undefined) {
+  if (!type) {
+    return "stock";
+  }
+
+  return type.toLowerCase() === "etf" ? "etf" : "stock";
+}
+
 function toProviderInstrument(row: {
   id: string;
   provider: string;
   provider_instrument_id: string;
   symbol: string;
+  type: string;
   name: string;
   exchange: string;
   currency: string;
@@ -34,7 +43,7 @@ function toProviderInstrument(row: {
     currency: row.currency,
     isin: row.isin ?? undefined,
     countryCode: metadata.countryCode,
-    type: metadata.type
+    type: row.type ?? metadata.type
   };
 }
 
@@ -58,7 +67,7 @@ export async function resolveInstrumentsBySearch(args: {
 
   const { data: dbRows } = await supabase
     .from("instruments")
-    .select("id,provider,provider_instrument_id,symbol,name,exchange,currency,isin,metadata")
+    .select("id,provider,provider_instrument_id,symbol,type,name,exchange,currency,isin,metadata")
     .eq("provider", providerName)
     .or(`symbol.ilike.${searchToken}%,name.ilike.%${searchToken}%,isin.eq.${searchToken}`)
     .limit(12);
@@ -75,7 +84,8 @@ export async function resolveInstrumentsBySearch(args: {
       const upserts = providerResults.map((instrument) => ({
         provider: instrument.provider,
         provider_instrument_id: instrument.providerInstrumentId,
-        symbol: instrument.symbol,
+        symbol: instrument.providerInstrumentId,
+        type: normalizeInstrumentType(instrument.type),
         isin: instrument.isin ?? null,
         name: instrument.name,
         exchange: instrument.exchange,

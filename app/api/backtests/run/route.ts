@@ -20,6 +20,14 @@ type DbInstrument = {
   metadata: unknown;
 };
 
+function normalizeInstrumentType(type: string | undefined) {
+  if (!type) {
+    return "stock";
+  }
+
+  return type.toLowerCase() === "etf" ? "etf" : "stock";
+}
+
 function dbInstrumentToProviderInstrument(instrument: DbInstrument): ProviderInstrument {
   return {
     instrumentId: instrument.id,
@@ -70,7 +78,8 @@ export async function POST(request: Request) {
     const upsertPayload = {
       provider: instrument.provider,
       provider_instrument_id: instrument.providerInstrumentId,
-      symbol: instrument.symbol,
+      symbol: instrument.providerInstrumentId,
+      type: normalizeInstrumentType(instrument.type),
       isin: instrument.isin ?? null,
       name: instrument.name,
       exchange: instrument.exchange,

@@ -79,6 +79,7 @@ Le migration sono in:
 - `supabase/migrations/0001_init.sql`
 - `supabase/migrations/0002_rls_policies.sql`
 - `supabase/migrations/0003_indexes.sql`
+- `supabase/migrations/0004_smart_instrument_search.sql` (pgvector + smart search index + RPC)
 
 Se non usi CLI, esegui i file SQL in ordine nel SQL editor Supabase.
 
@@ -141,9 +142,25 @@ Dopo il primo deploy, in Supabase aggiungi:
 
 ## API disponibili
 - `GET /api/instruments/search?q=...&provider=EODHD|YAHOO`
+- `GET /api/instruments/suggest?q=...&type=etf|stock&limit=10`
+- `POST /api/instruments/ai-search`
 - `POST /api/backtests/run`
 - `GET /api/backtests/:id`
 - `POST /api/chat/strategy`
+
+## Smart Instrument Search (Step 1)
+- Estensioni abilitate: `vector`, `pg_trgm`, `unaccent`.
+- Tabelle nuove:
+- `etf_fundamentals`
+- `etf_country_weights`
+- `etf_region_weights`
+- `etf_sector_weights`
+- `instrument_embeddings`
+- RPC disponibili:
+- `public.suggest_instruments(query_text, requested_type, limit_count)`
+- `public.match_instruments(query_embedding, match_count, filter_type)`
+- `instrument_embeddings` usa indice HNSW cosine su `vector(1536)`.
+- Il client non legge tabelle strumenti direttamente: usa solo API `/api/instruments/*` server-side.
 
 ## BacktestConfig (single source of truth)
 Definito in `lib/schemas/backtest-config.ts` (Zod + TypeScript).
@@ -174,6 +191,8 @@ Tabelle utente-proprietario con policy `user_id = auth.uid()`:
 - `backtest_trades`
 
 `instruments` e condivisa in lettura per utenti autenticati.
+
+Tabelle smart-search (`etf_*`, `instrument_embeddings`) hanno RLS attivo e sono accessibili solo via service role nelle API server-side.
 
 ## Acceptance Criteria MVP
 - [ ] Login magic link funzionante
