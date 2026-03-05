@@ -1,6 +1,7 @@
 export type DataProvider = "EODHD" | "YAHOO";
 
 export type ProviderInstrument = {
+  instrumentId?: string;
   provider: DataProvider;
   providerInstrumentId: string;
   symbol: string;

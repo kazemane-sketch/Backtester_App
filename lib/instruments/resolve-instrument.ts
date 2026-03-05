@@ -12,6 +12,7 @@ type SearchResult = {
 };
 
 function toProviderInstrument(row: {
+  id: string;
   provider: string;
   provider_instrument_id: string;
   symbol: string;
@@ -24,6 +25,7 @@ function toProviderInstrument(row: {
   const metadata = typeof row.metadata === "object" && row.metadata ? (row.metadata as Record<string, string>) : {};
 
   return {
+    instrumentId: row.id,
     provider: row.provider as DataProvider,
     providerInstrumentId: row.provider_instrument_id,
     symbol: row.symbol,
@@ -44,6 +46,7 @@ export async function resolveInstrumentsBySearch(args: {
   const providerName = args.dataProvider ?? "EODHD";
   const normalizedQuery = args.query.trim().toLowerCase();
   const safeQuery = normalizedQuery.replace(/[,%()]/g, " ").trim();
+  const searchToken = safeQuery || normalizedQuery;
   const cacheKey = `instrument:search:${providerName}:${args.locale ?? "na"}:${normalizedQuery}`;
   const cached = memoryCache.get<SearchResult>(cacheKey);
 
@@ -55,9 +58,9 @@ export async function resolveInstrumentsBySearch(args: {
 
   const { data: dbRows } = await supabase
     .from("instruments")
-    .select("provider,provider_instrument_id,symbol,name,exchange,currency,isin,metadata")
+    .select("id,provider,provider_instrument_id,symbol,name,exchange,currency,isin,metadata")
     .eq("provider", providerName)
-    .or(`symbol.ilike.${safeQuery}%,name.ilike.%${safeQuery}%,isin.eq.${safeQuery}`)
+    .or(`symbol.ilike.${searchToken}%,name.ilike.%${searchToken}%,isin.eq.${searchToken}`)
     .limit(12);
 
   let candidates = (dbRows ?? []).map((row) => toProviderInstrument(row));
@@ -86,6 +89,22 @@ export async function resolveInstrumentsBySearch(args: {
       await supabase.from("instruments").upsert(upserts, {
         onConflict: "provider,provider_instrument_id"
       });
+
+      const providerInstrumentIds = providerResults.map((instrument) => instrument.providerInstrumentId);
+      const { data: instrumentRows } = await supabase
+        .from("instruments")
+        .select("id,provider_instrument_id")
+        .eq("provider", providerName)
+        .in("provider_instrument_id", providerInstrumentIds);
+
+      const idByProviderInstrumentId = new Map(
+        (instrumentRows ?? []).map((row) => [row.provider_instrument_id, row.id])
+      );
+
+      candidates = providerResults.map((instrument) => ({
+        ...instrument,
+        instrumentId: idByProviderInstrumentId.get(instrument.providerInstrumentId)
+      }));
     }
   }
 

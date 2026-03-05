@@ -1,8 +1,10 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronDown, Trash2 } from "lucide-react";
 
 import type { BacktestConfig } from "@/lib/schemas/backtest-config";
+import type { ProviderInstrument } from "@/lib/market-data/types";
 import { useInstrumentSearch } from "@/hooks/use-instrument-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,17 +15,23 @@ import { Label } from "@/components/ui/label";
 function AssetQueryRow({
   asset,
   onChange,
+  onSelectInstrument,
   onRemove,
   provider,
   canRemove
 }: {
   asset: BacktestConfig["assets"][number];
   onChange: (query: string) => void;
+  onSelectInstrument: (instrument: ProviderInstrument) => void;
   onRemove: () => void;
   provider: BacktestConfig["dataProvider"];
   canRemove: boolean;
 }) {
+  const [showAlternatives, setShowAlternatives] = useState(false);
   const search = useInstrumentSearch(asset.query, provider);
+  const primary = search.data?.primary ?? null;
+  const alternatives = search.data?.alternatives ?? [];
+  const visibleListings = primary ? [primary, ...(showAlternatives ? alternatives : [])] : [];
 
   return (
     <div className="rounded-lg border bg-background/70 p-3">
@@ -40,17 +48,64 @@ function AssetQueryRow({
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
-      {search.data?.primary ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="secondary">Primary listing</Badge>
-          <span>
-            {search.data.primary.symbol} · {search.data.primary.name}
-          </span>
-          <span>
-            {search.data.primary.exchange} · {search.data.primary.currency}
-          </span>
-          {search.data.alternatives.length ? (
-            <Badge variant="outline">+{search.data.alternatives.length} altre quotazioni</Badge>
+
+      {search.isFetching ? <p className="mt-3 text-xs text-muted-foreground">Ricerca quotazioni...</p> : null}
+
+      {visibleListings.length ? (
+        <div className="mt-3 space-y-2">
+          {visibleListings.map((listing, index) => {
+            const isSelected =
+              (asset.resolvedInstrumentId && listing.instrumentId === asset.resolvedInstrumentId) ||
+              asset.query.toUpperCase() === listing.providerInstrumentId.toUpperCase();
+
+            return (
+              <div
+                className={`flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs ${
+                  isSelected ? "border-primary/40 bg-primary/5" : "border-border bg-background"
+                }`}
+                key={listing.providerInstrumentId}
+              >
+                <Badge variant={index === 0 ? "secondary" : "outline"}>
+                  {index === 0 ? "Primary listing" : "Alternative"}
+                </Badge>
+                <span>
+                  {listing.providerInstrumentId} · {listing.name}
+                </span>
+                <span className="text-muted-foreground">
+                  {listing.exchange} · {listing.currency}
+                </span>
+                <Button
+                  className="ml-auto"
+                  onClick={() => onSelectInstrument(listing)}
+                  size="sm"
+                  type="button"
+                  variant={isSelected ? "default" : "outline"}
+                >
+                  {isSelected ? (
+                    <>
+                      <Check className="h-3.5 w-3.5" />
+                      Selezionata
+                    </>
+                  ) : (
+                    "Seleziona"
+                  )}
+                </Button>
+              </div>
+            );
+          })}
+
+          {alternatives.length ? (
+            <Button
+              onClick={() => setShowAlternatives((previous) => !previous)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <ChevronDown className={`h-4 w-4 transition ${showAlternatives ? "rotate-180" : ""}`} />
+              {showAlternatives
+                ? "Nascondi altre quotazioni"
+                : `Mostra altre quotazioni (+${alternatives.length})`}
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -74,6 +129,21 @@ export function AssetsStep({
               ...asset,
               query,
               resolvedInstrumentId: undefined
+            }
+          : asset
+      )
+    });
+  }
+
+  function selectAssetInstrument(index: number, instrument: ProviderInstrument) {
+    onChange({
+      ...config,
+      assets: config.assets.map((asset, assetIndex) =>
+        assetIndex === index
+          ? {
+              ...asset,
+              query: instrument.providerInstrumentId,
+              resolvedInstrumentId: instrument.instrumentId
             }
           : asset
       )
@@ -109,7 +179,7 @@ export function AssetsStep({
       <CardHeader>
         <CardTitle>Assets</CardTitle>
         <CardDescription>
-          Cerca strumenti per ticker/nome/ISIN. Il provider seleziona una primary listing secondo policy locale.
+          Cerca strumenti per ticker/nome/ISIN e seleziona esplicitamente la quotazione da usare nel run.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -120,6 +190,7 @@ export function AssetsStep({
             canRemove={config.assets.length > 1}
             onChange={(query) => updateAsset(index, query)}
             onRemove={() => removeAsset(index)}
+            onSelectInstrument={(instrument) => selectAssetInstrument(index, instrument)}
             provider={config.dataProvider}
           />
         ))}
