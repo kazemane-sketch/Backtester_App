@@ -120,6 +120,8 @@ const SYNONYMS: Array<{
   { from: "azioni", to: "equity" }
 ];
 
+const EU_EXCHANGES = new Set(["LSE", "XETRA", "F", "PA", "MI", "AS", "BR", "SW", "MC", "BIT"]);
+
 function normalizeType(type: string | null | undefined): InstrumentTypeFilter | undefined {
   if (!type) {
     return undefined;
@@ -565,11 +567,83 @@ async function fetchStructuredCandidates(args: {
 }
 
 function buildInterpretedQuery(filters: AiExtractedFilters, queryEn: string) {
-  const keyword = filters.keywords.find((item) => item.trim().length > 0) ?? queryEn;
-  const country = filters.country_exposure[0]?.country;
-  const indexToken = filters.index_contains ? "index" : queryEn.toLowerCase().includes("index") ? "index" : "";
+  const chunks = [
+    filters.country_exposure[0]?.country ?? null,
+    filters.index_contains ?? null,
+    filters.keywords.find((item) => item.trim().length > 0) ?? null,
+    queryEn
+  ]
+    .filter((item): item is string => Boolean(item && item.trim().length > 0))
+    .map((item) => normalizeLikeTerm(item));
 
-  return sanitizeText([country, keyword, indexToken].filter(Boolean).join(" "));
+  const uniqueTokens = new Set<string>();
+  chunks
+    .join(" ")
+    .split(" ")
+    .filter((item) => item.length > 1)
+    .forEach((token) => {
+      uniqueTokens.add(token);
+    });
+
+  return sanitizeText([...uniqueTokens].slice(0, 4).join(" "));
+}
+
+function extractFallbackQueries(args: {
+  queryIt: string;
+  queryEn: string;
+  filters: AiExtractedFilters;
+}) {
+  const bucket = new Set<string>();
+
+  [args.queryIt, args.queryEn, args.filters.index_contains ?? ""].forEach((query) => {
+    expandQueryVariants(query).forEach((variant) => {
+      if (variant.length >= 2) {
+        bucket.add(variant);
+      }
+    });
+  });
+
+  args.filters.keywords.forEach((keyword) => {
+    expandQueryVariants(keyword).forEach((variant) => {
+      if (variant.length >= 2) {
+        bucket.add(variant);
+      }
+    });
+  });
+
+  args.filters.country_exposure.forEach((entry) => {
+    const country = sanitizeText(entry.country);
+    if (!country) {
+      return;
+    }
+    bucket.add(country);
+    bucket.add(`${country} etf`);
+  });
+
+  return [...bucket].slice(0, 12);
+}
+
+function prefersEuListing(query: string) {
+  const normalized = normalizeLikeTerm(query);
+  return (
+    normalized.includes("europa") ||
+    normalized.includes("europe") ||
+    normalized.includes("european") ||
+    normalized.includes("ue")
+  );
+}
+
+function applyEuListingBoost(items: SmartSuggestion[], shouldBoost: boolean) {
+  if (!shouldBoost) {
+    return items;
+  }
+
+  return items
+    .map((item) => ({
+      ...item,
+      score: item.score + (item.exchange && EU_EXCHANGES.has(item.exchange.toUpperCase()) ? 12 : 0)
+    }))
+    .sort((a, b) => b.score - a.score);
 }
 
 async function rerankWithEmbeddings(args: {
@@ -710,6 +784,7 @@ export async function runAiInstrumentSearch(args: {
 
   let filtered = mergeSuggestions([...initial, ...structuredCandidates], clampLimit(args.limit * 8, 250));
   const explanations: string[] = [];
+  const preFilterBaseline = [...filtered];
 
   if (filters.index_contains) {
     const needle = filters.index_contains.toLowerCase();
@@ -790,17 +865,35 @@ export async function runAiInstrumentSearch(args: {
 
   if (filtered.length === 0) {
     try {
-      const fallback = await fetchEodhdFallback({
-        query: queryEn || queryIt,
-        type: filters.type ?? args.type,
-        limit: args.limit
+      const fallbackQueries = extractFallbackQueries({
+        queryIt,
+        queryEn,
+        filters
       });
-      filtered = mergeSuggestions([...filtered, ...fallback], args.limit);
+
+      const fallbackCandidates: SmartSuggestion[] = [];
+      for (const query of fallbackQueries) {
+        const entries = await fetchEodhdFallback({
+          query,
+          type: filters.type ?? args.type,
+          limit: args.limit
+        });
+        fallbackCandidates.push(...entries);
+      }
+
+      filtered = mergeSuggestions([...filtered, ...fallbackCandidates], clampLimit(args.limit * 3, 120));
       explanations.push("Fallback provider EODHD applicato");
     } catch {
       // Keep empty results if provider fallback is unavailable.
     }
   }
+
+  if (filtered.length === 0 && preFilterBaseline.length > 0) {
+    filtered = preFilterBaseline.slice(0, args.limit);
+    explanations.push("Fallback baseline applicato: filtri troppo restrittivi");
+  }
+
+  filtered = applyEuListingBoost(filtered, prefersEuListing(`${queryIt} ${queryEn}`));
 
   return {
     query_it: queryIt,
