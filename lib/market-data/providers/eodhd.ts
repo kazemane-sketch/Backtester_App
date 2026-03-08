@@ -95,11 +95,21 @@ export class EodhdProvider implements MarketDataProvider {
       });
 
       if (!response.ok) {
+        // Check for plain-text rate limit response
+        const body = await response.text();
+        const isRateLimit = body.toLowerCase().includes("exceeded") || body.toLowerCase().includes("limit");
+
+        if (response.status === 402 || response.status === 429 || isRateLimit) {
+          throw new Error(
+            `EODHD daily API limit reached. Try again tomorrow or upgrade your EODHD plan at eodhistoricaldata.com`
+          );
+        }
+
         if (response.status === 403) {
           throw new Error(
-            `EODHD access denied for ${instrument.providerInstrumentId} (403). ` +
-              "The selected exchange may not be included in your EODHD plan. " +
-              "Choose another listing in Assets (for example US/LSE) or use a key with that exchange enabled."
+            `EODHD access denied for ${instrument.providerInstrumentId}. ` +
+              "The exchange may not be included in your plan. " +
+              "Try a different listing (e.g. .LSE or .XETRA) or upgrade your subscription."
           );
         }
 
