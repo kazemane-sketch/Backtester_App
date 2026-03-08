@@ -130,6 +130,8 @@ async function generateWithRetry<T>(args: {
       return args.schema.parse(parsed);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Invalid JSON";
+      console.error(`[engine-router] Validation failed (attempt ${attempt + 1}/${maxRetries + 1}):`, reason);
+      console.error(`[engine-router] Raw AI output:`, raw.substring(0, 500));
       correctionNote = args.buildCorrection(reason);
       attempt += 1;
     }

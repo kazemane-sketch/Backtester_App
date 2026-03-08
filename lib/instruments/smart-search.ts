@@ -137,6 +137,32 @@ const SYNONYMS: Array<{
 
 const EU_EXCHANGES = new Set(["LSE", "XETRA", "F", "PA", "MI", "AS", "BR", "SW", "MC", "BIT"]);
 
+const EU_ISIN_PREFIXES = new Set(["IE", "LU", "DE", "FR", "NL", "IT", "ES", "AT", "BE", "FI", "PT", "SE", "DK", "NO", "CH", "GB"]);
+
+/**
+ * Infer EU eligibility when the fundamentals data is missing (eu_eligible is NULL).
+ * Uses ISIN country prefix, exchange code, and UCITS keyword in name.
+ */
+function inferEuEligible(item: {
+  isin?: string | null;
+  exchange?: string | null;
+  name?: string | null;
+  euEligible?: boolean | null;
+}): boolean {
+  // If explicitly set, trust it
+  if (item.euEligible === true) return true;
+  if (item.euEligible === false) return false;
+
+  // Infer from available data
+  let score = 0;
+  const isinPrefix = (item.isin ?? "").substring(0, 2).toUpperCase();
+  if (isinPrefix && EU_ISIN_PREFIXES.has(isinPrefix)) score += 40;
+  if (item.exchange && EU_EXCHANGES.has(item.exchange.toUpperCase())) score += 15;
+  if ((item.name ?? "").toUpperCase().includes("UCITS")) score += 25;
+
+  return score >= 40;
+}
+
 function normalizeType(type: string | null | undefined): InstrumentTypeFilter | undefined {
   if (!type) {
     return undefined;
@@ -547,9 +573,9 @@ async function fetchStructuredCandidates(args: {
     query = query.eq("type", args.type);
   }
 
-  if (args.euMode) {
-    query = query.eq("eu_eligible", true);
-  }
+  // NOTE: Don't filter eu_eligible in DB query — many EU-eligible ETFs have
+  // NULL eu_eligible because fundamentals haven't been fetched yet.
+  // We filter in-memory using inferEuEligible() after fetching results.
 
   if (normalizedTerms.length) {
     const filters = normalizedTerms.flatMap((term) => [
@@ -589,6 +615,10 @@ async function fetchStructuredCandidates(args: {
       score: 30 + hits * 12,
       source: "db" as const
     };
+  }).filter((item) => {
+    // Apply EU mode filter in-memory using inference
+    if (!args.euMode) return true;
+    return inferEuEligible(item);
   });
 }
 
@@ -945,8 +975,9 @@ export async function runAiInstrumentSearch(args: {
   filtered = applyEuListingBoost(filtered, args.euMode || prefersEuListing(`${queryIt} ${queryEn}`));
 
   // Apply EU mode hard filter — only return EU-eligible instruments
+  // Use inferEuEligible() to catch instruments without fundamentals data
   if (args.euMode) {
-    filtered = filtered.filter((item) => item.euEligible === true);
+    filtered = filtered.filter((item) => inferEuEligible(item));
     explanations.push("Filtro EU mode applicato: solo ETF EU-eligible");
   }
 
