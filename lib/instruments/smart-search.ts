@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 
+import { callAnthropicJson, getSearchModel } from "@/lib/ai/models";
 import { getServerSecrets } from "@/lib/env";
 import { resolveInstrumentsBySearch } from "@/lib/instruments/resolve-instrument";
 import {
@@ -475,68 +476,37 @@ async function createQueryEmbedding(query: string): Promise<number[] | null> {
   }
 }
 
+/** Translate ETF query to English — uses Haiku (fast, cheap) */
 async function translateQueryToEnglish(query: string): Promise<string> {
   const fallback = expandQueryVariants(query).find((item) => item.toLowerCase() !== query.toLowerCase()) ?? query;
-  const { openAiApiKey } = getServerSecrets();
-  const client = new OpenAI({ apiKey: openAiApiKey });
 
   try {
-    const completion = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      temperature: 0,
-      response_format: {
-        type: "json_object"
-      },
-      messages: [
-        {
-          role: "system",
-          content: TRANSLATION_PROMPT
-        },
-        {
-          role: "user",
-          content: query
-        }
-      ]
+    const parsed = await callAnthropicJson<{ query_en?: string }>({
+      model: getSearchModel(),
+      systemPrompt: TRANSLATION_PROMPT,
+      messages: [{ role: "user", content: query }]
     });
 
-    const raw = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(raw) as { query_en?: string };
     const translated = sanitizeText(parsed.query_en ?? "");
-
     return translated || fallback;
   } catch {
     return fallback;
   }
 }
 
+/** Extract structured filters from query — uses Haiku (fast, cheap) */
 async function extractFiltersFromQuery(args: {
   query: string;
   requestedType?: InstrumentTypeFilter;
 }): Promise<AiExtractedFilters> {
-  const { openAiApiKey } = getServerSecrets();
-  const client = new OpenAI({ apiKey: openAiApiKey });
-
   try {
-    const completion = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      temperature: 0,
-      response_format: {
-        type: "json_object"
-      },
-      messages: [
-        {
-          role: "system",
-          content: FILTER_EXTRACTION_PROMPT
-        },
-        {
-          role: "user",
-          content: args.query
-        }
-      ]
+    const raw = await callAnthropicJson<Record<string, unknown>>({
+      model: getSearchModel(),
+      systemPrompt: FILTER_EXTRACTION_PROMPT,
+      messages: [{ role: "user", content: args.query }]
     });
 
-    const raw = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = aiExtractedFiltersSchema.parse(JSON.parse(raw));
+    const parsed = aiExtractedFiltersSchema.parse(raw);
 
     return {
       ...parsed,

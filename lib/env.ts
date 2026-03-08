@@ -1,4 +1,4 @@
-const requiredServerEnv = ["SUPABASE_SERVICE_ROLE_KEY", "EODHD_API_KEY", "OPENAI_API_KEY"] as const;
+const requiredServerEnv = ["SUPABASE_SERVICE_ROLE_KEY", "EODHD_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
 
 type EnvKey = (typeof requiredServerEnv)[number];
 
@@ -34,6 +34,7 @@ export function getServerSecrets() {
   return {
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY as string,
     eodhdApiKey: process.env.EODHD_API_KEY as string,
-    openAiApiKey: process.env.OPENAI_API_KEY as string
+    openAiApiKey: process.env.OPENAI_API_KEY as string,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY as string
   };
 }

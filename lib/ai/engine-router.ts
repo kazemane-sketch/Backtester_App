@@ -4,11 +4,11 @@
  * Two-stage approach:
  * 1. Intent Classification: Analyze user message → determine engine (A, B, or C)
  * 2. Config Generation: Route to engine-specific prompt + Zod schema
+ *
+ * Uses Anthropic Opus/Sonnet (ANTHROPIC_MODEL_BACKTEST) for strong reasoning.
  */
 
-import OpenAI from "openai";
-
-import { getServerSecrets } from "@/lib/env";
+import { callAnthropicJson, getBacktestModel } from "@/lib/ai/models";
 import {
   BACKTEST_CONFIG_SYSTEM_PROMPT,
   buildCorrectionPrompt
@@ -65,27 +65,28 @@ When in doubt:
 - Single asset with entry/exit conditions → Engine C
 - Simple "backtest X" without rules → Engine A`;
 
+/** Classify strategy intent — uses Opus/Sonnet (ANTHROPIC_MODEL_BACKTEST) */
 export async function classifyEngine(messages: Message[]): Promise<{
   engine: EngineType;
   reasoning: string;
 }> {
-  const { openAiApiKey } = getServerSecrets();
-  const client = new OpenAI({ apiKey: openAiApiKey });
-
-  const completion = await client.chat.completions.create({
-    model: "gpt-4.1-mini",
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: INTENT_SYSTEM_PROMPT },
-      ...messages
-    ]
-  });
-
-  const raw = completion.choices[0]?.message?.content ?? '{"engine": "A", "reasoning": "default"}';
-
   try {
-    const parsed = JSON.parse(raw) as { engine: string; reasoning: string };
+    // Filter to only user/assistant messages (Anthropic doesn't accept system in messages)
+    const chatMessages = messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+    // Ensure at least one user message
+    if (chatMessages.length === 0) {
+      return { engine: "A", reasoning: "No user messages, defaulting to Engine A" };
+    }
+
+    const parsed = await callAnthropicJson<{ engine: string; reasoning: string }>({
+      model: getBacktestModel(),
+      systemPrompt: INTENT_SYSTEM_PROMPT,
+      messages: chatMessages
+    });
+
     const engine = (["A", "B", "C"].includes(parsed.engine) ? parsed.engine : "A") as EngineType;
     return { engine, reasoning: parsed.reasoning ?? "" };
   } catch {
@@ -95,6 +96,7 @@ export async function classifyEngine(messages: Message[]): Promise<{
 
 // ─── Config Generation ──────────────────────────────────────────────────────
 
+/** Generate config with retry — uses Opus/Sonnet (ANTHROPIC_MODEL_BACKTEST) */
 async function generateWithRetry<T>(args: {
   messages: Message[];
   systemPrompt: string;
@@ -102,37 +104,30 @@ async function generateWithRetry<T>(args: {
   buildCorrection: (error: string) => string;
   maxRetries?: number;
 }): Promise<T> {
-  const { openAiApiKey } = getServerSecrets();
-  const client = new OpenAI({ apiKey: openAiApiKey });
-
+  const model = getBacktestModel();
   const maxRetries = args.maxRetries ?? 2;
   let attempt = 0;
-  let correctionNote: string | null = null;
+  let systemPrompt = args.systemPrompt;
+
+  // Filter to only user/assistant messages
+  const chatMessages = args.messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
   while (attempt <= maxRetries) {
-    const completion = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: args.systemPrompt },
-        ...args.messages,
-        ...(correctionNote
-          ? [{ role: "system" as const, content: correctionNote }]
-          : [])
-      ]
-    });
-
-    const raw = completion.choices[0]?.message?.content ?? "{}";
-
     try {
-      const parsed = JSON.parse(raw) as unknown;
-      return args.schema.parse(parsed);
+      const raw = await callAnthropicJson<unknown>({
+        model,
+        systemPrompt,
+        messages: chatMessages
+      });
+
+      return args.schema.parse(raw);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Invalid JSON";
       console.error(`[engine-router] Validation failed (attempt ${attempt + 1}/${maxRetries + 1}):`, reason);
-      console.error(`[engine-router] Raw AI output:`, raw.substring(0, 500));
-      correctionNote = args.buildCorrection(reason);
+      // Append correction to system prompt for next attempt
+      systemPrompt = args.systemPrompt + "\n\n" + args.buildCorrection(reason);
       attempt += 1;
     }
   }
@@ -144,6 +139,7 @@ async function generateWithRetry<T>(args: {
 
 /**
  * Classify the user's strategy intent and generate the appropriate engine config.
+ * Uses Anthropic Opus/Sonnet for both classification and generation.
  */
 export async function routeAndGenerateConfig(args: {
   messages: Message[];
