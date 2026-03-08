@@ -11,3 +11,7 @@ export function buildFundamentalsEndpoint(symbol: string) {
 export function buildEodEndpoint(symbol: string) {
   return `/eod/${encodeURIComponent(symbol)}`;
 }
+
+export function buildExchangeSymbolListEndpoint(exchange: string) {
+  return `/exchange-symbol-list/${encodeURIComponent(exchange)}`;
+}

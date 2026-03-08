@@ -1,4 +1,6 @@
 import type { BacktestConfig } from "@/lib/schemas/backtest-config";
+import type { EngineBConfig } from "@/lib/schemas/engine-b-config";
+import type { EngineCConfig } from "@/lib/schemas/engine-c-config";
 
 export type PricePoint = {
   date: string;
@@ -24,7 +26,7 @@ export type TimeSeriesPoint = {
 export type TradeLogEntry = {
   date: string;
   decisionDate?: string;
-  reason?: "initial_allocation" | "periodic" | "threshold";
+  reason?: "initial_allocation" | "periodic" | "threshold" | "signal" | "stop_loss" | "take_profit";
   instrumentId?: string;
   symbol: string;
   side: "buy" | "sell";
@@ -44,7 +46,10 @@ export type BacktestSummaryMetrics = {
   totalFees: number;
 };
 
+// ─── Engine A Result ────────────────────────────────────────────────────────
+
 export type BacktestRunResult = {
+  engine?: "A";
   config: BacktestConfig;
   summary: BacktestSummaryMetrics;
   timeseries: TimeSeriesPoint[];
@@ -53,3 +58,67 @@ export type BacktestRunResult = {
     droppedDates: string[];
   };
 };
+
+// ─── Engine B Result ────────────────────────────────────────────────────────
+
+export type AllocationSnapshot = {
+  date: string;
+  positions: Array<{
+    symbol: string;
+    instrumentId: string;
+    weight: number;
+  }>;
+  survivorCount: number;
+};
+
+export type EngineBRunResult = {
+  engine: "B";
+  config: EngineBConfig;
+  summary: BacktestSummaryMetrics;
+  timeseries: TimeSeriesPoint[];
+  trades: TradeLogEntry[];
+  allocationHistory: AllocationSnapshot[];
+  diagnostics?: {
+    droppedDates: string[];
+  };
+};
+
+// ─── Engine C Result ────────────────────────────────────────────────────────
+
+export type TradeRecord = {
+  entryDate: string;
+  entryPrice: number;
+  exitDate: string;
+  exitPrice: number;
+  returnPct: number;
+  holdingDays: number;
+  exitReason: "signal" | "stop_loss" | "take_profit";
+};
+
+export type EngineCExtendedMetrics = {
+  winRate: number;
+  avgWinPct: number;
+  avgLossPct: number;
+  profitFactor: number;
+  maxConsecutiveLosses: number;
+  timeInMarketPct: number;
+  avgHoldingDays: number;
+  totalTrades: number;
+};
+
+export type EngineCRunResult = {
+  engine: "C";
+  config: EngineCConfig;
+  summary: BacktestSummaryMetrics;
+  extendedMetrics: EngineCExtendedMetrics;
+  timeseries: TimeSeriesPoint[];
+  trades: TradeLogEntry[];
+  tradeRecords: TradeRecord[];
+  diagnostics?: {
+    droppedDates: string[];
+  };
+};
+
+// ─── Union Type ─────────────────────────────────────────────────────────────
+
+export type AnyBacktestResult = BacktestRunResult | EngineBRunResult | EngineCRunResult;

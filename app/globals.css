@@ -46,3 +46,33 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* Mobile sidebar slide-in animation */
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-in.slide-in-from-left {
+  animation: slideInFromLeft 0.2s ease-out;
+}
+
+/* Strategy Builder — stack panels vertically on mobile */
+@media (max-width: 1023px) {
+  [data-panel-group-direction="horizontal"] {
+    flex-direction: column !important;
+  }
+
+  [data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id] {
+    display: none;
+  }
+
+  [data-panel-group-direction="horizontal"] > [data-panel] {
+    flex: 1 1 auto !important;
+    min-height: 300px;
+  }
+}

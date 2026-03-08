@@ -1,22 +1,36 @@
 import type { BacktestConfig } from "@/lib/schemas/backtest-config";
-import type { BacktestRunResult } from "@/types/backtest";
+import type { BacktestSummaryMetrics, TimeSeriesPoint, TradeLogEntry } from "@/types/backtest";
 import { uniformDownsample } from "@/lib/backtest/downsample";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
+/** Minimal result shape accepted by saveBacktestResult — works with any engine */
+type SaveableResult = {
+  summary: BacktestSummaryMetrics;
+  timeseries: TimeSeriesPoint[];
+  trades: TradeLogEntry[];
+  diagnostics?: { droppedDates: string[] };
+};
+
 export async function createBacktestRun(args: {
   userId: string;
-  config: BacktestConfig;
+  config: BacktestConfig | Record<string, unknown>;
 }) {
   const supabase = createServiceRoleClient();
+
+  // Extract common fields safely — works for any engine config shape
+  const name =
+    (args.config as Record<string, unknown>).name as string | undefined;
+  const dataProvider =
+    (args.config as Record<string, unknown>).dataProvider as string | undefined;
 
   const { data, error } = await supabase
     .from("backtest_runs")
     .insert({
       user_id: args.userId,
-      name: args.config.name ?? "Backtest run",
+      name: name ?? "Backtest run",
       status: "running",
       config: args.config,
-      data_provider: args.config.dataProvider,
+      data_provider: dataProvider ?? "EODHD",
       started_at: new Date().toISOString()
     })
     .select("id")
@@ -32,7 +46,7 @@ export async function createBacktestRun(args: {
 export async function saveBacktestResult(args: {
   userId: string;
   runId: string;
-  result: BacktestRunResult;
+  result: SaveableResult;
 }) {
   const supabase = createServiceRoleClient();
 

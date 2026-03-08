@@ -1,5 +1,11 @@
 import { workerEnv } from "../config";
-import { buildEodEndpoint, buildFundamentalsEndpoint, buildSearchEndpoint, EODHD_BASE_URL } from "./endpoints";
+import {
+  buildEodEndpoint,
+  buildExchangeSymbolListEndpoint,
+  buildFundamentalsEndpoint,
+  buildSearchEndpoint,
+  EODHD_BASE_URL
+} from "./endpoints";
 import { EodhdRateLimiter } from "./rateLimit";
 
 type SearchType = "etf" | "stock";
@@ -12,6 +18,16 @@ export type EodhdSearchItem = {
   ISIN?: string;
   Country?: string;
   Type?: string;
+};
+
+export type EodhdExchangeSymbol = {
+  Code?: string;
+  Name?: string;
+  Country?: string;
+  Exchange?: string;
+  Currency?: string;
+  Type?: string;
+  Isin?: string;
 };
 
 export type EodhdEodBar = {
@@ -70,6 +86,13 @@ export class EodhdClient {
       from,
       to
     });
+  }
+
+  async getExchangeSymbols(exchange: string, type?: "etf" | "stock") {
+    return this.fetchJson<EodhdExchangeSymbol[]>(
+      buildExchangeSymbolListEndpoint(exchange),
+      { type }
+    );
   }
 }
 

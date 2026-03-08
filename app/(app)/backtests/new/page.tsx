@@ -1,15 +1,9 @@
-import { PortfolioWizard } from "@/components/backtests/wizard";
+import { StrategyBuilder } from "@/components/strategy/strategy-builder";
 
-export default function NewBacktestPage() {
+export default function StrategyBuilderPage() {
   return (
-    <section className="space-y-4">
-      <div>
-        <h1 className="font-[var(--font-heading)] text-3xl">Nuovo Backtest</h1>
-        <p className="text-sm text-muted-foreground">
-          Workflow guidato: Assets → Pesi → Regole → Benchmark → Run.
-        </p>
-      </div>
-      <PortfolioWizard />
-    </section>
+    <div className="h-[calc(100vh-7.5rem)] lg:h-[calc(100vh-7.5rem)] min-h-[600px]">
+      <StrategyBuilder />
+    </div>
   );
 }

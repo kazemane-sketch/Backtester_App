@@ -38,13 +38,14 @@ export function StrategyChat({
     setInput("");
 
     try {
-      const response = await mutation.mutateAsync(nextMessages);
-      onConfigGenerated(response.config);
+      const response = await mutation.mutateAsync({ messages: nextMessages });
+      onConfigGenerated(response.config as BacktestConfig);
+      const configName = (response.config as Record<string, unknown>).name ?? "Backtest run";
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: `Config generato: ${response.config.name ?? "Backtest run"}. Il wizard è stato aggiornato automaticamente.`
+          content: `Config generato (Engine ${response.engine}): ${configName}. Il wizard è stato aggiornato automaticamente.`
         }
       ]);
     } catch (error) {

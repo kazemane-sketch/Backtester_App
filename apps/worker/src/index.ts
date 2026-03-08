@@ -5,6 +5,7 @@ import { processRefreshEmbeddings } from "./jobs/refreshEmbeddings";
 import { processSyncEtfFundamentals } from "./jobs/syncEtfFundamentals";
 import { processSyncPricesDaily } from "./jobs/syncPricesDaily";
 import { processSyncUniverse } from "./jobs/syncUniverse";
+import { processSyncUniverseV2 } from "./jobs/syncUniverseV2";
 import { closeQueueResources, queueNames, redisConnection, upstashRestClient } from "./queues";
 import { startScheduler } from "./scheduler";
 
@@ -30,6 +31,10 @@ async function bootstrap() {
 
   const workers = [
     new Worker(queueNames.universe, processSyncUniverse, {
+      connection: redisConnection,
+      concurrency
+    }),
+    new Worker(queueNames.universeV2, processSyncUniverseV2, {
       connection: redisConnection,
       concurrency
     }),

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { generateBacktestConfigFromChat } from "@/lib/ai/structured-output";
+import { routeAndGenerateConfig, type EngineType } from "@/lib/ai/engine-router";
 import { strategyChatRequestSchema } from "@/lib/schemas/chat";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -21,13 +21,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  // Optional: allow caller to force a specific engine
+  const forceEngine = (body.forceEngine as EngineType) || undefined;
+
   try {
-    const config = await generateBacktestConfigFromChat({
+    const result = await routeAndGenerateConfig({
       messages: parsed.data.messages,
-      maxRetries: 2
+      forceEngine
     });
 
-    return NextResponse.json({ config });
+    return NextResponse.json({
+      engine: result.engine,
+      config: result.config,
+      reasoning: result.reasoning
+    });
   } catch (error) {
     return NextResponse.json(
       {

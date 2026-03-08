@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth/get-user";
-import { SignOutButton } from "@/components/auth/sign-out-button";
-import { Button } from "@/components/ui/button";
+import { AppSidebar } from "@/components/layout/app-sidebar";
+import { AppTopbar } from "@/components/layout/app-topbar";
+import { EuModeProvider } from "@/components/providers/eu-mode-provider";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
@@ -13,25 +13,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          <div>
-            <p className="font-[var(--font-heading)] text-lg">Portfolio Backtester</p>
-            <p className="text-xs text-muted-foreground">{user.email}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="ghost">
-              <Link href="/dashboard">Dashboard</Link>
-            </Button>
-            <Button asChild variant="ghost">
-              <Link href="/backtests/new">Nuovo Backtest</Link>
-            </Button>
-            <SignOutButton />
-          </div>
+    <EuModeProvider>
+      <div className="flex h-screen overflow-hidden">
+        {/* Sidebar */}
+        <AppSidebar />
+
+        {/* Main area */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Topbar */}
+          <AppTopbar email={user.email ?? ""} />
+
+          {/* Content */}
+          <main className="flex-1 overflow-y-auto px-6 py-6">{children}</main>
         </div>
-      </header>
-      <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</main>
-    </div>
+      </div>
+    </EuModeProvider>
   );
 }

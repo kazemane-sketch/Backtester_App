@@ -4,7 +4,7 @@ import { z } from "zod";
 import { enqueueAdminJob, type AdminJobMode, type AdminJobName } from "@/lib/ingest/queue";
 
 const requestSchema = z.object({
-  job: z.enum(["universe", "fundamentals", "prices", "embeddings"]),
+  job: z.enum(["universe", "universeV2", "fundamentals", "prices", "embeddings"]),
   mode: z.enum(["full", "delta"]).optional()
 });
 

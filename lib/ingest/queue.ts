@@ -1,6 +1,6 @@
 import { ConnectionOptions, Queue } from "bullmq";
 
-export type AdminJobName = "universe" | "fundamentals" | "prices" | "embeddings";
+export type AdminJobName = "universe" | "universeV2" | "fundamentals" | "prices" | "embeddings";
 export type AdminJobMode = "full" | "delta";
 
 type EnqueueResult = {
@@ -12,6 +12,7 @@ type EnqueueResult = {
 
 const queueNames = {
   universe: "universeQueue",
+  universeV2: "universeV2Queue",
   fundamentals: "fundamentalsQueue",
   prices: "pricesQueue",
   embeddings: "embeddingsQueue"
@@ -19,6 +20,7 @@ const queueNames = {
 
 const jobNames = {
   universe: "sync-universe",
+  universeV2: "sync-universe-v2",
   fundamentals: "sync-etf-fundamentals",
   prices: "sync-prices-daily",
   embeddings: "refresh-embeddings"

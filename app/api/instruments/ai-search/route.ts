@@ -23,9 +23,11 @@ export async function POST(request: Request) {
 
   try {
     const result = await runAiInstrumentSearch({
+      supabase,
       query: parsed.data.query,
       type: parsed.data.type,
-      limit: parsed.data.limit
+      limit: parsed.data.limit,
+      euMode: parsed.data.eu_mode
     });
 
     return NextResponse.json(result);

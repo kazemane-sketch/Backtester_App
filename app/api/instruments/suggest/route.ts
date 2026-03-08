@@ -18,7 +18,8 @@ export async function GET(request: Request) {
   const parsed = suggestQuerySchema.safeParse({
     q: searchParams.get("q"),
     type: searchParams.get("type") ?? undefined,
-    limit: searchParams.get("limit") ?? undefined
+    limit: searchParams.get("limit") ?? undefined,
+    eu_mode: searchParams.get("eu_mode") ?? undefined
   });
 
   if (!parsed.success) {
@@ -29,10 +30,12 @@ export async function GET(request: Request) {
 
   try {
     const suggestions = await getInstrumentSuggestions({
+      supabase,
       query: parsed.data.q,
       type: "etf",
       limit: parsed.data.limit,
-      locale
+      locale,
+      euMode: parsed.data.eu_mode
     });
 
     return NextResponse.json(suggestions);

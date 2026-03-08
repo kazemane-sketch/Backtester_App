@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 
 import { getServerSecrets } from "@/lib/env";
@@ -7,7 +8,6 @@ import {
   type AiExtractedFilters,
   type InstrumentTypeFilter
 } from "@/lib/schemas/instrument-search";
-import { createServiceRoleClient } from "@/lib/supabase/server";
 
 type RpcSuggestionRow = {
   instrument_id: string;
@@ -32,6 +32,11 @@ type RpcMatchRow = {
   index_name: string | null;
   domicile: string | null;
   category: string | null;
+  fund_family: string | null;
+  total_assets: number | null;
+  ongoing_charge: number | null;
+  distribution_policy: string | null;
+  eu_eligible: boolean | null;
   similarity: number;
 };
 
@@ -47,6 +52,11 @@ type SearchViewRow = {
   domicile: string | null;
   category: string | null;
   description: string | null;
+  fund_family: string | null;
+  total_assets: number | null;
+  ongoing_charge: number | null;
+  distribution_policy: string | null;
+  eu_eligible: boolean | null;
 };
 
 type EodhdSearchItem = {
@@ -70,6 +80,11 @@ export type SmartSuggestion = {
   indexName: string | null;
   domicile: string | null;
   description?: string | null;
+  fundFamily?: string | null;
+  totalAssets?: number | null;
+  ongoingCharge?: number | null;
+  distributionPolicy?: string | null;
+  euEligible?: boolean | null;
   score: number;
   source: "db" | "eodhd";
 };
@@ -209,12 +224,12 @@ function mergeSuggestions(items: SmartSuggestion[], limit: number): SmartSuggest
 }
 
 async function fetchDbSuggestions(args: {
+  supabase: SupabaseClient;
   query: string;
   type?: InstrumentTypeFilter;
   limit: number;
 }): Promise<SmartSuggestion[]> {
-  const admin = createServiceRoleClient();
-  const { data, error } = await admin.rpc("suggest_instruments", {
+  const { data, error } = await args.supabase.rpc("suggest_instruments", {
     query_text: args.query,
     requested_type: args.type ?? null,
     limit_count: clampLimit(args.limit, 50)
@@ -241,6 +256,7 @@ async function fetchDbSuggestions(args: {
 }
 
 async function fetchDbSuggestionsForQueries(args: {
+  supabase: SupabaseClient;
   queries: string[];
   type?: InstrumentTypeFilter;
   limit: number;
@@ -253,6 +269,7 @@ async function fetchDbSuggestionsForQueries(args: {
     }
 
     const rows = await fetchDbSuggestions({
+      supabase: args.supabase,
       query,
       type: args.type,
       limit: clampLimit(args.limit, 50)
@@ -327,12 +344,11 @@ async function fetchEodhdCandidates(args: {
 }
 
 async function indexEodhdCandidatesInline(args: {
+  supabase: SupabaseClient;
   query: string;
   type?: InstrumentTypeFilter;
   limit: number;
 }) {
-  const admin = createServiceRoleClient();
-
   const candidates = await fetchEodhdCandidates({
     query: args.query,
     type: args.type,
@@ -369,7 +385,7 @@ async function indexEodhdCandidatesInline(args: {
 
   await withTimeout(
     Promise.resolve(
-      admin.from("instruments").upsert(upserts, {
+      args.supabase.from("instruments").upsert(upserts, {
         onConflict: "provider,symbol"
       })
     ),
@@ -514,20 +530,25 @@ async function extractFiltersFromQuery(args: {
 }
 
 async function fetchStructuredCandidates(args: {
+  supabase: SupabaseClient;
   terms: string[];
   type?: InstrumentTypeFilter;
+  euMode?: boolean;
   limit: number;
 }) {
-  const admin = createServiceRoleClient();
   const normalizedTerms = args.terms.map(normalizeLikeTerm).filter((item) => item.length >= 3).slice(0, 6);
 
-  let query = admin
+  let query = args.supabase
     .from("instrument_search_view")
-    .select("instrument_id,symbol,name,isin,type,exchange,currency,index_name,domicile,category,description")
+    .select("instrument_id,symbol,name,isin,type,exchange,currency,index_name,domicile,category,description,fund_family,total_assets,ongoing_charge,distribution_policy,eu_eligible")
     .limit(clampLimit(args.limit, 200));
 
   if (args.type) {
     query = query.eq("type", args.type);
+  }
+
+  if (args.euMode) {
+    query = query.eq("eu_eligible", true);
   }
 
   if (normalizedTerms.length) {
@@ -560,6 +581,11 @@ async function fetchStructuredCandidates(args: {
       indexName: row.index_name,
       domicile: row.domicile,
       description: row.description,
+      fundFamily: row.fund_family,
+      totalAssets: row.total_assets,
+      ongoingCharge: row.ongoing_charge,
+      distributionPolicy: row.distribution_policy,
+      euEligible: row.eu_eligible,
       score: 30 + hits * 12,
       source: "db" as const
     };
@@ -647,13 +673,14 @@ function applyEuListingBoost(items: SmartSuggestion[], shouldBoost: boolean) {
 }
 
 async function rerankWithEmbeddings(args: {
+  supabase: SupabaseClient;
   base: SmartSuggestion[];
   queries: string[];
   type?: InstrumentTypeFilter;
   limit: number;
 }) {
-  const admin = createServiceRoleClient();
   const semanticScores = new Map<string, number>();
+  const semanticMeta = new Map<string, RpcMatchRow>();
 
   for (const query of args.queries) {
     if (!query || isTickerLike(query)) {
@@ -665,7 +692,7 @@ async function rerankWithEmbeddings(args: {
       continue;
     }
 
-    const { data } = await admin.rpc("match_instruments", {
+    const { data } = await args.supabase.rpc("match_instruments", {
       query_embedding: embedding,
       match_count: clampLimit(args.limit * 4, 100),
       filter_type: args.type ?? null
@@ -674,15 +701,25 @@ async function rerankWithEmbeddings(args: {
     ((data ?? []) as RpcMatchRow[]).forEach((row) => {
       const score = Number(row.similarity ?? 0) * 100;
       const previous = semanticScores.get(row.instrument_id) ?? 0;
-      semanticScores.set(row.instrument_id, Math.max(previous, score));
+      if (score > previous) {
+        semanticScores.set(row.instrument_id, score);
+        semanticMeta.set(row.instrument_id, row);
+      }
     });
   }
 
   return args.base
     .map((item) => {
       const semantic = semanticScores.get(item.instrumentId) ?? 0;
+      const meta = semanticMeta.get(item.instrumentId);
       return {
         ...item,
+        // Enrich with metadata from semantic results if missing
+        fundFamily: item.fundFamily ?? meta?.fund_family ?? null,
+        totalAssets: item.totalAssets ?? meta?.total_assets ?? null,
+        ongoingCharge: item.ongoingCharge ?? meta?.ongoing_charge ?? null,
+        distributionPolicy: item.distributionPolicy ?? meta?.distribution_policy ?? null,
+        euEligible: item.euEligible ?? meta?.eu_eligible ?? null,
         score: item.score * 0.7 + semantic * 0.3
       };
     })
@@ -690,13 +727,16 @@ async function rerankWithEmbeddings(args: {
 }
 
 export async function getInstrumentSuggestions(args: {
+  supabase: SupabaseClient;
   query: string;
   type?: InstrumentTypeFilter;
   limit: number;
   locale?: string;
+  euMode?: boolean;
 }): Promise<SmartSuggestion[]> {
   const queryVariants = expandQueryVariants(args.query);
   let dbResults = await fetchDbSuggestionsForQueries({
+    supabase: args.supabase,
     queries: queryVariants,
     type: args.type,
     limit: clampLimit(args.limit * 3, 50)
@@ -705,11 +745,13 @@ export async function getInstrumentSuggestions(args: {
   if (dbResults.length < 5) {
     try {
       await indexEodhdCandidatesInline({
+        supabase: args.supabase,
         query: queryVariants[0] ?? args.query,
         type: args.type,
         limit: 20
       });
       dbResults = await fetchDbSuggestionsForQueries({
+        supabase: args.supabase,
         queries: queryVariants,
         type: args.type,
         limit: clampLimit(args.limit * 4, 60)
@@ -733,9 +775,11 @@ export async function getInstrumentSuggestions(args: {
 }
 
 export async function runAiInstrumentSearch(args: {
+  supabase: SupabaseClient;
   query: string;
   type?: InstrumentTypeFilter;
   limit: number;
+  euMode?: boolean;
 }): Promise<SmartAiSearchResult> {
   const queryIt = sanitizeText(args.query);
   const queryEn = sanitizeText(await translateQueryToEnglish(queryIt));
@@ -753,6 +797,7 @@ export async function runAiInstrumentSearch(args: {
   const dedupedQueries = [...new Set(queryVariants.filter((item) => item.length >= 2))];
 
   let initial = await fetchDbSuggestionsForQueries({
+    supabase: args.supabase,
     queries: dedupedQueries,
     type: filters.type ?? args.type,
     limit: clampLimit(args.limit * 6, 100)
@@ -761,11 +806,13 @@ export async function runAiInstrumentSearch(args: {
   if (initial.length < 5) {
     try {
       await indexEodhdCandidatesInline({
+        supabase: args.supabase,
         query: queryEn || queryIt,
         type: filters.type ?? args.type,
         limit: 20
       });
       const refreshed = await fetchDbSuggestionsForQueries({
+        supabase: args.supabase,
         queries: dedupedQueries,
         type: filters.type ?? args.type,
         limit: clampLimit(args.limit * 7, 120)
@@ -777,8 +824,10 @@ export async function runAiInstrumentSearch(args: {
   }
 
   const structuredCandidates = await fetchStructuredCandidates({
+    supabase: args.supabase,
     terms: buildSearchTerms(dedupedQueries),
     type: filters.type ?? args.type,
+    euMode: args.euMode,
     limit: clampLimit(args.limit * 6, 150)
   });
 
@@ -809,14 +858,13 @@ export async function runAiInstrumentSearch(args: {
   }
 
   if (filters.country_exposure.length > 0) {
-    const admin = createServiceRoleClient();
     let allowedIds: Set<string> | null = null;
 
     for (const exposure of filters.country_exposure) {
       const min = exposure.min ?? 0;
       const max = exposure.max ?? 1;
 
-      const { data, error } = await admin
+      const { data, error } = await args.supabase
         .from("etf_country_weights")
         .select("instrument_id")
         .ilike("country", `%${exposure.country}%`)
@@ -855,6 +903,7 @@ export async function runAiInstrumentSearch(args: {
 
   if (!isTickerLike(queryIt) || !isTickerLike(queryEn)) {
     filtered = await rerankWithEmbeddings({
+      supabase: args.supabase,
       base: filtered,
       queries: [queryIt, queryEn],
       type: filters.type ?? args.type,
@@ -893,7 +942,13 @@ export async function runAiInstrumentSearch(args: {
     explanations.push("Fallback baseline applicato: filtri troppo restrittivi");
   }
 
-  filtered = applyEuListingBoost(filtered, prefersEuListing(`${queryIt} ${queryEn}`));
+  filtered = applyEuListingBoost(filtered, args.euMode || prefersEuListing(`${queryIt} ${queryEn}`));
+
+  // Apply EU mode hard filter — only return EU-eligible instruments
+  if (args.euMode) {
+    filtered = filtered.filter((item) => item.euEligible === true);
+    explanations.push("Filtro EU mode applicato: solo ETF EU-eligible");
+  }
 
   return {
     query_it: queryIt,

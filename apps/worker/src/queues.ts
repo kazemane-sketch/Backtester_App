@@ -15,6 +15,7 @@ export type IngestJobPayload = {
 
 export const queueNames = {
   universe: "universeQueue",
+  universeV2: "universeV2Queue",
   fundamentals: "fundamentalsQueue",
   prices: "pricesQueue",
   embeddings: "embeddingsQueue"
@@ -65,12 +66,14 @@ function buildQueue(name: string) {
 }
 
 export const universeQueue = buildQueue(queueNames.universe);
+export const universeV2Queue = buildQueue(queueNames.universeV2);
 export const fundamentalsQueue = buildQueue(queueNames.fundamentals);
 export const pricesQueue = buildQueue(queueNames.prices);
 export const embeddingsQueue = buildQueue(queueNames.embeddings);
 
 export const queues = {
   universeQueue,
+  universeV2Queue,
   fundamentalsQueue,
   pricesQueue,
   embeddingsQueue
@@ -79,6 +82,7 @@ export const queues = {
 export async function closeQueueResources() {
   await Promise.all([
     universeQueue.close(),
+    universeV2Queue.close(),
     fundamentalsQueue.close(),
     pricesQueue.close(),
     embeddingsQueue.close()

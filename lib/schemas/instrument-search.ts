@@ -11,13 +11,18 @@ const percentageFraction = z
 export const suggestQuerySchema = z.object({
   q: z.string().trim().min(2).max(120),
   type: instrumentTypeSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(10).default(10)
+  limit: z.coerce.number().int().min(1).max(10).default(10),
+  eu_mode: z
+    .string()
+    .optional()
+    .transform((v) => v === "true")
 });
 
 export const aiSearchRequestSchema = z.object({
   query: z.string().trim().min(2).max(500),
   type: instrumentTypeSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20)
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  eu_mode: z.boolean().optional().default(false)
 });
 
 export const aiCountryExposureSchema = z
