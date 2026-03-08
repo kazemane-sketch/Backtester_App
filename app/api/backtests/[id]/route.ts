@@ -8,36 +8,37 @@ export async function GET(_request: Request, context: { params: { id: string } }
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (!user && process.env.NODE_ENV !== "development") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const runId = context.params.id;
+  const userId = user?.id ?? "00000000-0000-0000-0000-000000000000";
 
   const [runResponse, summaryResponse, timeseriesResponse, tradesResponse] = await Promise.all([
     supabase
       .from("backtest_runs")
       .select("id,name,status,config,data_provider,created_at,completed_at,error_message")
       .eq("id", runId)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .single(),
     supabase
       .from("backtest_results_summary")
       .select("total_return,cagr,volatility_ann,sharpe,max_drawdown,calmar,total_fees")
       .eq("run_id", runId)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle(),
     supabase
       .from("backtest_timeseries")
       .select("t,portfolio_value,benchmark_value,daily_return,drawdown")
       .eq("run_id", runId)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("t", { ascending: true }),
     supabase
       .from("backtest_trades")
       .select("trade_date,symbol,side,quantity,price,gross_amount,fee_amount")
       .eq("run_id", runId)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("trade_date", { ascending: true })
   ]);
 

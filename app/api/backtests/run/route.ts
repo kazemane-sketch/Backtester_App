@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (!user && process.env.NODE_ENV !== "development") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -63,6 +63,9 @@ export async function POST(request: Request) {
   const provider = getMarketDataProvider(config.dataProvider);
   const admin = createServiceRoleClient();
   let runId: string | null = null;
+
+  /* Dev bypass: use a deterministic UUID when no user session */
+  const userId = user?.id ?? "00000000-0000-0000-0000-000000000000";
 
   async function getDbInstrumentById(instrumentId: string): Promise<DbInstrument | null> {
     const { data } = await admin
@@ -180,7 +183,7 @@ export async function POST(request: Request) {
 
   try {
     runId = await createBacktestRun({
-      userId: user.id,
+      userId,
       config
     });
     if (!runId) {
@@ -220,7 +223,7 @@ export async function POST(request: Request) {
     });
 
     await saveBacktestResult({
-      userId: user.id,
+      userId,
       runId,
       result
     });

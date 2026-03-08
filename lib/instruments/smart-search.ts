@@ -136,18 +136,69 @@ const SYNONYMS: Array<{
   { from: "azioni", to: "equity" }
 ];
 
-const EU_EXCHANGES = new Set(["LSE", "XETRA", "F", "PA", "MI", "AS", "BR", "SW", "MC", "BIT"]);
+/**
+ * EU exchange codes — both short (EODHD suffix) and long form.
+ * Maps each variant to a canonical short code for matching.
+ */
+const EU_EXCHANGE_CODES = new Map<string, string>([
+  ["LSE", "LSE"], ["LONDON", "LSE"], ["L", "LSE"],
+  ["XETRA", "XETRA"], ["XETR", "XETRA"],
+  ["F", "F"], ["FRANKFURT", "F"],
+  ["PA", "PA"], ["PARIS", "PA"],
+  ["MI", "MI"], ["MIL", "MI"], ["BIT", "MI"], ["MILAN", "MI"],
+  ["AS", "AS"], ["AMS", "AS"], ["AMSTERDAM", "AS"],
+  ["BR", "BR"], ["BRUSSELS", "BR"],
+  ["SW", "SW"], ["SWX", "SW"], ["ZURICH", "SW"], ["SIX", "SW"],
+  ["MC", "MC"], ["MADRID", "MC"],
+  ["LIS", "LIS"], ["LISBON", "LIS"],
+  ["HE", "HE"], ["HELSINKI", "HE"],
+  ["VI", "VI"], ["VIENNA", "VI"],
+  ["CO", "CO"], ["COPENHAGEN", "CO"],
+  ["OL", "OL"], ["OSLO", "OL"],
+  ["ST", "ST"], ["STOCKHOLM", "ST"],
+  ["IR", "IR"], ["DUBLIN", "IR"],
+]);
 
 const EU_ISIN_PREFIXES = new Set(["IE", "LU", "DE", "FR", "NL", "IT", "ES", "AT", "BE", "FI", "PT", "SE", "DK", "NO", "CH", "GB"]);
 
 /**
+ * Check if an exchange string matches a known EU exchange.
+ * Handles both short codes ("SW") and long forms ("NYSE ARCA").
+ * Returns the canonical exchange code or null.
+ */
+function matchEuExchange(exchange: string | null | undefined): string | null {
+  if (!exchange) return null;
+  const upper = exchange.toUpperCase().trim();
+
+  // Direct match (short codes like "SW", "MI", "LSE")
+  if (EU_EXCHANGE_CODES.has(upper)) return EU_EXCHANGE_CODES.get(upper)!;
+
+  // Also check the suffix in symbol-like exchanges (e.g. extract "SW" from "VWCE.SW")
+  // and check exchange parts for multi-word exchanges
+  const parts = upper.split(/[\s.]+/);
+  for (const part of parts) {
+    if (EU_EXCHANGE_CODES.has(part)) return EU_EXCHANGE_CODES.get(part)!;
+  }
+
+  return null;
+}
+
+/**
  * Infer EU eligibility when the fundamentals data is missing (eu_eligible is NULL).
- * Uses ISIN country prefix, exchange code, and UCITS keyword in name.
+ * Uses ISIN country prefix, exchange code, UCITS keyword in name, and symbol suffix.
+ *
+ * Scoring:
+ *  - EU ISIN prefix: +40 (strongest signal — domicile is in EU/EEA)
+ *  - EU exchange:    +30 (listed on a European exchange)
+ *  - UCITS in name:  +25 (regulatory framework = EU)
+ *  - Symbol suffix:  +30 (e.g. ".MI", ".AS" in the ticker itself)
+ *  Threshold: ≥ 30 (a single strong signal is enough)
  */
 function inferEuEligible(item: {
   isin?: string | null;
   exchange?: string | null;
   name?: string | null;
+  symbol?: string | null;
   euEligible?: boolean | null;
 }): boolean {
   // If explicitly set, trust it
@@ -156,12 +207,22 @@ function inferEuEligible(item: {
 
   // Infer from available data
   let score = 0;
+
+  // 1. ISIN prefix check
   const isinPrefix = (item.isin ?? "").substring(0, 2).toUpperCase();
   if (isinPrefix && EU_ISIN_PREFIXES.has(isinPrefix)) score += 40;
-  if (item.exchange && EU_EXCHANGES.has(item.exchange.toUpperCase())) score += 15;
+
+  // 2. Exchange check (handles both short and long forms)
+  if (matchEuExchange(item.exchange)) score += 30;
+
+  // 3. UCITS in name
   if ((item.name ?? "").toUpperCase().includes("UCITS")) score += 25;
 
-  return score >= 40;
+  // 4. Symbol suffix check (e.g. "VWCE.MI" → ".MI" → EU exchange)
+  const symbolSuffix = (item.symbol ?? "").split(".").pop()?.toUpperCase();
+  if (symbolSuffix && EU_EXCHANGE_CODES.has(symbolSuffix)) score += 30;
+
+  return score >= 30;
 }
 
 function normalizeType(type: string | null | undefined): InstrumentTypeFilter | undefined {
@@ -667,7 +728,7 @@ function applyEuListingBoost(items: SmartSuggestion[], shouldBoost: boolean) {
   return items
     .map((item) => ({
       ...item,
-      score: item.score + (item.exchange && EU_EXCHANGES.has(item.exchange.toUpperCase()) ? 12 : 0)
+      score: item.score + (matchEuExchange(item.exchange) ? 12 : 0)
     }))
     .sort((a, b) => b.score - a.score);
 }
@@ -837,18 +898,27 @@ export async function runAiInstrumentSearch(args: {
 
   if (filters.index_contains) {
     const needle = filters.index_contains.toLowerCase();
-    filtered = filtered.filter((item) => {
-      const indexName = (item.indexName ?? "").toLowerCase();
-      const description = (item.description ?? "").toLowerCase();
-      return indexName.includes(needle) || description.includes(needle);
-    });
-    explanations.push(`Filtro index_contains applicato: ${filters.index_contains}`);
+    const needleTokens = needle.split(/\s+/).filter(t => t.length >= 3);
+    // Soft boost instead of hard filter — many ETFs have NULL index_name/description
+    // Items that match get a score boost; items that don't are kept but ranked lower
+    filtered = filtered.map((item) => {
+      const haystack = `${item.indexName ?? ""} ${item.description ?? ""} ${item.name ?? ""}`.toLowerCase();
+      const exactMatch = haystack.includes(needle);
+      const tokenHits = needleTokens.filter(t => haystack.includes(t)).length;
+      const boost = exactMatch ? 30 : tokenHits > 0 ? tokenHits * 10 : 0;
+      return { ...item, score: item.score + boost };
+    }).sort((a, b) => b.score - a.score);
+    explanations.push(`Boost index_contains applicato: ${filters.index_contains}`);
   }
 
   if (filters.domicile) {
     const needle = filters.domicile.toLowerCase();
-    filtered = filtered.filter((item) => (item.domicile ?? "").toLowerCase().includes(needle));
-    explanations.push(`Filtro domicile applicato: ${filters.domicile}`);
+    // Soft boost — many ETFs don't have domicile data populated
+    filtered = filtered.map((item) => {
+      const match = (item.domicile ?? "").toLowerCase().includes(needle);
+      return { ...item, score: item.score + (match ? 20 : 0) };
+    }).sort((a, b) => b.score - a.score);
+    explanations.push(`Boost domicile applicato: ${filters.domicile}`);
   }
 
   if (filters.currency) {

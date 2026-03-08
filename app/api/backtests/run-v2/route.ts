@@ -143,7 +143,7 @@ export async function POST(request: Request) {
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (!user && process.env.NODE_ENV !== "development") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -160,9 +160,12 @@ export async function POST(request: Request) {
   const { resolveAsset, resolveBenchmark } = makeResolver(admin, locale);
   let runId: string | null = null;
 
+  /* Dev bypass: use a deterministic UUID when no user session */
+  const userId = user?.id ?? "00000000-0000-0000-0000-000000000000";
+
   try {
     // Create run record (persistence accepts any config as JSON)
-    runId = await createBacktestRun({ userId: user.id, config: config as Record<string, unknown> });
+    runId = await createBacktestRun({ userId, config: config as Record<string, unknown> });
     if (!runId) throw new Error("Failed to initialize backtest run");
 
     let resultPayload: {
@@ -202,7 +205,7 @@ export async function POST(request: Request) {
         benchmarkSeries
       });
 
-      await saveBacktestResult({ userId: user.id, runId, result });
+      await saveBacktestResult({ userId, runId, result });
       resultPayload = { id: runId, engine: "A", summary: result.summary, diagnostics: result.diagnostics };
     }
 
@@ -232,7 +235,7 @@ export async function POST(request: Request) {
 
       // Save using Engine A's persistence (compatible timeseries/trades format)
       await saveBacktestResult({
-        userId: user.id,
+        userId,
         runId,
         result: {
           summary: result.summary,
@@ -275,7 +278,7 @@ export async function POST(request: Request) {
 
       // Save using Engine A's persistence
       await saveBacktestResult({
-        userId: user.id,
+        userId,
         runId,
         result: {
           summary: result.summary,
